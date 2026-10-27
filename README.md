@@ -47,3 +47,50 @@ Evaluation will use shared market scenarios, independent training seeds, paired 
 
 Historical price-path experiments will use explicitly modeled execution
 costs. Simulator assumptions and limitations will be documented alongside the findings.
+
+
+## Development
+
+### Requirements
+
+- Python 3.10 or newer
+- Git
+
+The initial development environment was verified using Python 3.14.3 on macOS.
+
+### Setting Up the Project
+
+Clone the repository and navigate to its root directory.
+
+Create a Python virtual environment:
+
+```bash
+python3 -m venv .venv
+```
+
+Activate the virtual environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Install ExecAI in editable mode:
+
+```bash
+python -m pip install -e .
+```
+
+### Running Tests
+
+Run the complete test suite:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+### Project Structure
+
+- `src/execai/` - Main Python package
+- `tests/` - Automated tests
+- `docs/` - Project design and research documentation
+- `.github/workflows/` - Continuous integration configuration
