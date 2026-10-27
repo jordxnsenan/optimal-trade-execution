@@ -1,0 +1,26 @@
+# local Python virtual environments
+/.venv/
+/venv/
+
+# generated Python files
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+
+# development tool caches
+.pytest_cache/
+.ruff_cache/
+
+# local credentials + environment settings
+.env
+.env.*
+!.env.example
+
+# raw market data
+/data/raw/
+
+# OS metadata
+.DS_Store
+Thumbs.db
