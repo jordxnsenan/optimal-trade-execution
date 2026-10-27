@@ -7,6 +7,7 @@ from execai.environment.costs import (
     calculate_sell_execution,
 )
 from execai.environment.inventory import Inventory
+from execai.environment.records import ExecutionRecord
 
 
 class ExecutionEnvironment:
@@ -28,6 +29,8 @@ class ExecutionEnvironment:
         self.total_proceeds = 0.0
         self.total_fees = 0.0
         self.is_done = True
+        
+        self._execution_history: list[ExecutionRecord] = []
 
     def reset(self, prices: list[float]) -> dict:
         """starts a new execution episode"""
@@ -45,6 +48,7 @@ class ExecutionEnvironment:
         self.total_proceeds = 0.0
         self.total_fees = 0.0
         self.is_done = False
+        self._execution_history.clear()
 
         return self._get_observation()
 
@@ -64,14 +68,16 @@ class ExecutionEnvironment:
             raise RuntimeError("Reset the environment before taking another step.")
 
         shares_sold = self.inventory.execute_sell(num_lots)
-
-        # sells all remaining inventory at the final decision
-        is_final_step = self.current_step == self.config.num_time_steps - 1
-
+        forced_shares = 0
+        
+        is_final_step = self.current_step == (self.config.num_time_steps - 1)
+        
         if is_final_step and self.inventory.remaining_lots > 0:
-            shares_sold += self.inventory.execute_sell(
+            forced_shares = self.inventory.execute_sell(
                 self.inventory.remaining_lots
             )
+            
+            shares_sold += forced_shares
 
         market_price = self._prices[self.current_step]
 
@@ -97,6 +103,22 @@ class ExecutionEnvironment:
             / arrival_notional
             * BASIS_POINTS_MULTIPLIER
         )
+        
+        
+        execution_record = ExecutionRecord(
+            time_step=self.current_step,
+            requested_lots=num_lots,
+            shares_sold=shares_sold,
+            forced_shares=forced_shares,
+            market_price=market_price,
+            execution_price=execution.execution_price,
+            fees=execution.fees,
+            net_proceeds=execution.net_proceeds,
+            remaining_shares=self.inventory.remaining_shares,
+            reward_bps=reward,
+        )
+
+        self._execution_history.append(execution_record)
 
         self.current_step += 1
 
@@ -124,3 +146,9 @@ class ExecutionEnvironment:
             / arrival_notional
             * BASIS_POINTS_MULTIPLIER
         )
+        
+    @property
+    def execution_history(self) -> tuple[ExecutionRecord, ...]:
+        """returns the execution records for the current episode"""
+        
+        return tuple(self._execution_history)   

@@ -200,5 +200,92 @@ class ExecutionEnvironmentTests(unittest.TestCase):
         self.assertEqual(self.cost_environment.inventory.remaining_shares, 400)
 
 
+    def test_execution_history_starts_empty(self):
+        self.environment.reset(self.prices)
+
+        self.assertEqual(len(self.environment.execution_history), 0)
+
+    def test_execution_history_records_trade(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+        self.cost_environment.step(1)
+
+        record = self.cost_environment.execution_history[0]
+
+        self.assertEqual(record.time_step, 0)
+        self.assertEqual(record.requested_lots, 1)
+        self.assertEqual(record.shares_sold, 100)
+        self.assertEqual(record.forced_shares, 0)
+        self.assertEqual(record.remaining_shares, 300)
+
+        self.assertAlmostEqual(record.market_price, 100.0)
+        self.assertAlmostEqual(record.execution_price, 99.90)
+        self.assertAlmostEqual(record.fees, 1.0)
+        self.assertAlmostEqual(record.net_proceeds, 9989.0)
+        self.assertAlmostEqual(record.reward_bps, -2.75)
+
+    def test_execution_history_records_zero_trade(self):
+        self.environment.reset(self.prices)
+        self.environment.step(0)
+
+        record = self.environment.execution_history[0]
+
+        self.assertEqual(record.requested_lots, 0)
+        self.assertEqual(record.shares_sold, 0)
+        self.assertEqual(record.net_proceeds, 0.0)
+        self.assertEqual(record.remaining_shares, 400)
+
+    def test_execution_history_records_forced_liquidation(self):
+        self.environment.reset(self.prices)
+
+        self.environment.step(1)
+        self.environment.step(0)
+        self.environment.step(0)
+
+        final_record = self.environment.execution_history[-1]
+
+        self.assertEqual(final_record.time_step, 2)
+        self.assertEqual(final_record.requested_lots, 0)
+        self.assertEqual(final_record.shares_sold, 300)
+        self.assertEqual(final_record.forced_shares, 300)
+        self.assertEqual(final_record.remaining_shares, 0)
+
+    def test_reset_clears_execution_history(self):
+        self.environment.reset(self.prices)
+        self.environment.step(1)
+
+        self.environment.reset(self.prices)
+
+        self.assertEqual(len(self.environment.execution_history), 0)
+
+    def test_execution_history_reconciles_with_totals(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+
+        for action in [1, 0, 0]:
+            self.cost_environment.step(action)
+
+        records = self.cost_environment.execution_history
+
+        total_shares = sum(record.shares_sold for record in records)
+        total_proceeds = sum(record.net_proceeds for record in records)
+        total_fees = sum(record.fees for record in records)
+        total_reward = sum(record.reward_bps for record in records)
+
+        self.assertEqual(total_shares, self.config.total_shares)
+        self.assertAlmostEqual(total_proceeds, self.cost_environment.total_proceeds)
+        self.assertAlmostEqual(total_fees, self.cost_environment.total_fees)
+        self.assertAlmostEqual(
+            total_reward,
+            -self.cost_environment.implementation_shortfall_bps,
+        )
+
+    def test_invalid_action_does_not_create_record(self):
+        self.environment.reset(self.prices)
+
+        with self.assertRaises(ValueError):
+            self.environment.step(5)
+
+        self.assertEqual(len(self.environment.execution_history), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
