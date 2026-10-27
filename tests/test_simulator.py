@@ -2,6 +2,7 @@ import unittest
 
 from execai.environment.config import ExecutionConfig
 from execai.environment.simulator import ExecutionEnvironment
+from execai.environment.costs import ExecutionCostConfig
 
 
 class ExecutionEnvironmentTests(unittest.TestCase):
@@ -15,6 +16,17 @@ class ExecutionEnvironmentTests(unittest.TestCase):
 
         self.environment = ExecutionEnvironment(self.config)
         self.prices = [100.0, 99.0, 101.0]
+        
+        self.cost_config = ExecutionCostConfig(
+            half_spread_bps=5.0,
+            temporary_impact_bps=20.0,
+            fee_per_share=0.01,
+        )
+
+        self.cost_environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+        )
 
     def test_reset_returns_initial_observation(self):
         observation = self.environment.reset(self.prices)
@@ -115,6 +127,77 @@ class ExecutionEnvironmentTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.environment.reset([100.0, float("nan"), 101.0])
+            
+    
+    def test_trade_costs_reduce_proceeds_and_reward(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+
+        observation, reward, done = self.cost_environment.step(1)
+
+        self.assertAlmostEqual(self.cost_environment.total_proceeds, 9989.0)
+        self.assertAlmostEqual(self.cost_environment.total_fees, 1.0)
+        self.assertAlmostEqual(reward, -2.75)
+        self.assertEqual(self.cost_environment.inventory.remaining_shares, 300)
+        self.assertFalse(done)
+
+    def test_zero_trade_has_no_execution_cost(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+
+        observation, reward, done = self.cost_environment.step(0)
+
+        self.assertEqual(self.cost_environment.total_proceeds, 0.0)
+        self.assertEqual(self.cost_environment.total_fees, 0.0)
+        self.assertEqual(reward, 0.0)
+        self.assertEqual(self.cost_environment.inventory.remaining_shares, 400)
+        self.assertFalse(done)
+
+    def test_deadline_trade_charges_costs_on_remaining_inventory(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+
+        self.cost_environment.step(1)
+        self.cost_environment.step(0)
+        observation, reward, done = self.cost_environment.step(0)
+
+        self.assertTrue(done)
+        self.assertIsNone(observation)
+        self.assertEqual(self.cost_environment.inventory.remaining_shares, 0)
+        self.assertAlmostEqual(self.cost_environment.total_proceeds, 39926.0)
+        self.assertAlmostEqual(self.cost_environment.total_fees, 4.0)
+
+    def test_early_completion_includes_execution_costs(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+
+        observation, reward, done = self.cost_environment.step(4)
+
+        self.assertTrue(done)
+        self.assertIsNone(observation)
+        self.assertAlmostEqual(self.cost_environment.total_proceeds, 39896.0)
+        self.assertAlmostEqual(self.cost_environment.total_fees, 4.0)
+        self.assertAlmostEqual(reward, -26.0)
+
+    def test_rewards_reconcile_with_shortfall_with_costs(self):
+        self.cost_environment.reset(self.prices)
+
+        total_reward = 0.0
+
+        for action in [1, 0, 0]:
+            _, reward, _ = self.cost_environment.step(action)
+            total_reward += reward
+
+        self.assertAlmostEqual(
+            total_reward,
+            -self.cost_environment.implementation_shortfall_bps,
+        )
+
+    def test_reset_clears_execution_cost_totals(self):
+        self.cost_environment.reset([100.0, 100.0, 100.0])
+        self.cost_environment.step(4)
+
+        self.cost_environment.reset(self.prices)
+
+        self.assertEqual(self.cost_environment.total_proceeds, 0.0)
+        self.assertEqual(self.cost_environment.total_fees, 0.0)
+        self.assertEqual(self.cost_environment.inventory.remaining_shares, 400)
 
 
 if __name__ == "__main__":
