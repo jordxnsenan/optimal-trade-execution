@@ -189,5 +189,114 @@ class QLearningAgentTests(unittest.TestCase):
                     QLearningAgent(self.config, **parameters)
 
 
+    def test_greedy_selection_chooses_highest_q_value(self):
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        next_observation = {
+            "time_step": 1,
+            "remaining_lots": 2,
+        }
+
+        self.agent.update(
+            observation,
+            action=2,
+            reward=8.0,
+            next_observation=next_observation,
+        )
+
+        action = self.agent.select_action(
+            observation,
+            exploration_rate=0.0,
+        )
+
+        self.assertEqual(action, 2)
+
+    def test_greedy_selection_breaks_ties_consistently(self):
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        action = self.agent.select_action(observation)
+
+        self.assertEqual(action, 0)
+
+    def test_exploration_is_reproducible(self):
+        first_agent = QLearningAgent(self.config, seed=42)
+        second_agent = QLearningAgent(self.config, seed=42)
+
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        first_actions = [
+            first_agent.select_action(observation, exploration_rate=1.0)
+            for _ in range(20)
+        ]
+
+        second_actions = [
+            second_agent.select_action(observation, exploration_rate=1.0)
+            for _ in range(20)
+        ]
+
+        self.assertEqual(first_actions, second_actions)
+        self.assertGreater(len(set(first_actions)), 1)
+
+    def test_exploration_respects_remaining_inventory(self):
+        agent = QLearningAgent(self.config, seed=42)
+
+        observation = {
+            "time_step": 1,
+            "remaining_lots": 2,
+        }
+
+        for _ in range(100):
+            action = agent.select_action(
+                observation,
+                exploration_rate=1.0,
+            )
+
+            self.assertIn(action, [0, 1, 2])
+
+    def test_final_step_sells_remaining_inventory(self):
+        observation = {
+            "time_step": 2,
+            "remaining_lots": 3,
+        }
+
+        for exploration_rate in [0.0, 1.0]:
+            action = self.agent.select_action(
+                observation,
+                exploration_rate=exploration_rate,
+            )
+
+            self.assertEqual(action, 3)
+
+
+    def test_invalid_exploration_rate(self):
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        invalid_rates = [
+            -0.1,
+            1.1,
+            float("nan"),
+            float("inf"),
+        ]
+
+        for exploration_rate in invalid_rates:
+            with self.subTest(exploration_rate=exploration_rate):
+                with self.assertRaises(ValueError):
+                    self.agent.select_action(observation,
+                        exploration_rate=exploration_rate,
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()

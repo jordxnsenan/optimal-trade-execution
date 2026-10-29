@@ -1,3 +1,5 @@
+import random
+
 from execai.environment.config import ExecutionConfig
 
 
@@ -35,6 +37,7 @@ class QLearningAgent:
         config: ExecutionConfig,
         learning_rate: float = 0.1,
         discount_factor: float = 1.0,
+        seed: int | None = None,
     ):
         if not 0 < learning_rate <= 1:
             raise ValueError("Learning rate must be between 0 and 1.")
@@ -46,7 +49,10 @@ class QLearningAgent:
         self.learning_rate = learning_rate
         self.discount_factor = discount_factor
 
+        self.random_generator = random.Random(seed)
+
         self.q_table: dict[tuple[int, int], dict[int, float]] = {}
+
 
     def _get_action_values(self, observation: dict) -> dict[int, float]:
         """gets Q-values + initializes unseen states to zero"""
@@ -73,6 +79,34 @@ class QLearningAgent:
         action_values = self._get_action_values(observation)
 
         return action_values[action]
+    
+    
+    def select_action(
+        self,
+        observation: dict,
+        exploration_rate: float = 0.0,
+    ) -> int:
+        """selects a valid action using epsilon-greedy exploration"""
+
+        if not 0 <= exploration_rate <= 1:
+            raise ValueError("Exploration rate must be between 0 and 1.")
+
+        action_values = self._get_action_values(observation)
+        valid_actions = list(action_values)
+
+        # explores by selecting a random valid action
+        if (
+            exploration_rate > 0
+            and self.random_generator.random() < exploration_rate
+        ):
+            return self.random_generator.choice(valid_actions)
+
+        # otherwise chooses the action with the highest Q-value
+        return max(
+            valid_actions,
+            key=lambda action: action_values[action],
+        )
+
 
     def update(
         self,
