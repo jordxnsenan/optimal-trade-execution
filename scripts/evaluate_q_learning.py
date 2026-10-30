@@ -1,4 +1,5 @@
 import argparse
+import math
 
 from functools import partial
 from statistics import mean
@@ -30,13 +31,14 @@ def generate_episodes(
     num_episodes: int,
     config: ExecutionConfig,
     starting_seed: int,
+    volatility_per_step: float = VOLATILITY_PER_STEP,
 ) -> list[list[float]]:
-    """generates reproducible synthetic market episodes."""
+    """generates reproducible synthetic market episodes"""
 
     return [
         generate_price_path(
             starting_price=STARTING_PRICE,
-            volatility_per_step=VOLATILITY_PER_STEP,
+            volatility_per_step=volatility_per_step,
             num_time_steps=config.num_time_steps,
             seed=starting_seed + episode_index,
         )
@@ -63,6 +65,13 @@ def main():
         help="Number of training episodes per agent.",
     )
     
+    parser.add_argument(
+        "--training-volatility",
+        type=float,
+        default=VOLATILITY_PER_STEP,
+        help="Volatility used to generate training price paths.",
+    )
+    
     arguments = parser.parse_args()
     
     if not 0 < arguments.training_episodes <= TRAINING_SEED_STRIDE:
@@ -70,6 +79,14 @@ def main():
             "Training episodes must be between 1 and 100,000."
         )
 
+    if (
+        not math.isfinite(arguments.training_volatility)
+        or arguments.training_volatility < 0
+    ):
+        parser.error(
+            "Training volatility must be non-negative and finite."
+        )
+        
     if arguments.full_size:
         config = ExecutionConfig(
             total_shares=10_000,
@@ -119,6 +136,9 @@ def main():
     print(f"Inventory lots: {config.num_lots}")
     
     print(f"Training episodes per agent: {arguments.training_episodes}")
+    print(f"Training volatility: {arguments.training_volatility:.4f}")
+    print(f"Validation volatility: {VOLATILITY_PER_STEP:.4f}")
+    
     print(f"Test episodes: {TEST_EPISODES}")
     print(f"Training seeds: {len(AGENT_SEEDS)}")
 
@@ -135,6 +155,7 @@ def main():
             arguments.training_episodes,
             config,
             TRAINING_SEED_START + agent_seed * TRAINING_SEED_STRIDE,
+            volatility_per_step=arguments.training_volatility,
         )
         
         agent = QLearningAgent(
