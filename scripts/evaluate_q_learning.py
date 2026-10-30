@@ -72,6 +72,12 @@ def main():
         help="Volatility used to generate training price paths.",
     )
     
+    parser.add_argument(
+        "--random-tie-breaking",
+        action="store_true",
+        help="Randomly select among equally valued greedy actions during training.",
+    )
+    
     arguments = parser.parse_args()
     
     if not 0 < arguments.training_episodes <= TRAINING_SEED_STRIDE:
@@ -138,6 +144,7 @@ def main():
     print(f"Training episodes per agent: {arguments.training_episodes}")
     print(f"Training volatility: {arguments.training_volatility:.4f}")
     print(f"Validation volatility: {VOLATILITY_PER_STEP:.4f}")
+    print(f"Random tie-breaking: {arguments.random_tie_breaking}")
     
     print(f"Test episodes: {TEST_EPISODES}")
     print(f"Training seeds: {len(AGENT_SEEDS)}")
@@ -176,6 +183,7 @@ def main():
             training_paths,
             initial_exploration_rate=1.0,
             final_exploration_rate=0.1,
+            random_tie_breaking=arguments.random_tie_breaking,
         )
 
         # evaluates the trained agent without exploration

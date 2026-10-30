@@ -314,6 +314,60 @@ class QLearningAgentTests(unittest.TestCase):
             self.agent.action_update_counts[state][3],
             2,
         )
+        
+    
+    def test_random_tie_breaking_is_reproducible(self):
+        first_agent = QLearningAgent(self.config, seed=42)
+        second_agent = QLearningAgent(self.config, seed=42)
+
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        first_actions = [
+            first_agent.select_action(
+                observation,
+                random_tie_breaking=True,
+            )
+            for _ in range(30)
+        ]
+
+        second_actions = [
+            second_agent.select_action(
+                observation,
+                random_tie_breaking=True,
+            )
+            for _ in range(30)
+        ]
+
+        self.assertEqual(first_actions, second_actions)
+        self.assertGreater(len(set(first_actions)), 1)
+    
+    
+    def test_random_tie_breaking_respects_highest_q_value(self):
+        agent = QLearningAgent(self.config, seed=42)
+
+        observation = {
+            "time_step": 0,
+            "remaining_lots": 4,
+        }
+
+        # makes selling two lots the only highest-valued action
+        agent.update(
+            observation,
+            action=2,
+            reward=10.0,
+            next_observation=None,
+        )
+
+        for _ in range(30):
+            action = agent.select_action(
+                observation,
+                random_tie_breaking=True,
+            )
+
+            self.assertEqual(action, 2)
 
 
 if __name__ == "__main__":

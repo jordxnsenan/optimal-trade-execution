@@ -8,6 +8,7 @@ def train_q_learning(
     price_paths: list[list[float]],
     initial_exploration_rate: float = 1.0,
     final_exploration_rate: float = 0.1,
+    random_tie_breaking: bool = False,
 ) -> list[float]:
     """trains Q-learning agent and return execution costs per episode"""
 
@@ -27,8 +28,11 @@ def train_q_learning(
 
         # gradually reduces exploration during training
         if num_episodes == 1:
+            
             exploration_rate = initial_exploration_rate
+            
         else:
+            
             training_progress = episode_index / (num_episodes - 1)
 
             exploration_rate = initial_exploration_rate + (
@@ -38,7 +42,12 @@ def train_q_learning(
         observation = environment.reset(prices)
 
         while observation is not None:
-            action = agent.select_action(observation, exploration_rate)
+            
+            action = agent.select_action(
+                observation,
+                exploration_rate,
+                random_tie_breaking=random_tie_breaking,
+            )
 
             next_observation, reward, _ = environment.step(action)
 

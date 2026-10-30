@@ -185,6 +185,72 @@ class QLearningTrainingTests(unittest.TestCase):
                 environment,
                 [[100.0, 100.0, 100.0]],
             )
+            
+
+    def test_training_uses_random_tie_breaking(self):
+        agent = QLearningAgent(self.config, seed=42)
+        environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+        )
+
+        price_paths = [[100.0, 100.0, 100.0]]
+
+        with patch.object(
+            agent,
+            "select_action",
+            wraps=agent.select_action,
+        ) as select_action:
+            train_q_learning(
+                agent,
+                environment,
+                price_paths,
+                random_tie_breaking=True,
+            )
+
+        self.assertGreater(select_action.call_count, 0)
+
+        for recorded_call in select_action.call_args_list:
+            self.assertTrue(
+                recorded_call.kwargs["random_tie_breaking"]
+            )
+
+
+    def test_random_tie_breaking_training_is_reproducible(self):
+        price_paths = [
+            [100.0, 100.0, 100.0]
+            for _ in range(20)
+        ]
+
+        first_agent = QLearningAgent(self.config, seed=42)
+        second_agent = QLearningAgent(self.config, seed=42)
+
+        first_environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+        )
+
+        second_environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+        )
+
+        first_costs = train_q_learning(
+            first_agent,
+            first_environment,
+            price_paths,
+            random_tie_breaking=True,
+        )
+
+        second_costs = train_q_learning(
+            second_agent,
+            second_environment,
+            price_paths,
+            random_tie_breaking=True,
+        )
+
+        self.assertEqual(first_costs, second_costs)
+        self.assertEqual(first_agent.q_table, second_agent.q_table)
 
 
 if __name__ == "__main__":

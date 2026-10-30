@@ -86,6 +86,7 @@ class QLearningAgent:
         self,
         observation: dict,
         exploration_rate: float = 0.0,
+        random_tie_breaking: bool = False,
     ) -> int:
         """selects a valid action using epsilon-greedy exploration"""
 
@@ -102,11 +103,20 @@ class QLearningAgent:
         ):
             return self.random_generator.choice(valid_actions)
 
-        # otherwise chooses the action with the highest Q-value
-        return max(
-            valid_actions,
-            key=lambda action: action_values[action],
-        )
+        # finds all actions with the highest Q-value
+        highest_q_value = max(action_values.values())
+
+        best_actions = [
+            action
+            for action in valid_actions
+            if action_values[action] == highest_q_value
+        ]
+
+        # optionally chooses randomly when multiple actions are equally valued
+        if random_tie_breaking and len(best_actions) > 1:
+            return self.random_generator.choice(best_actions)
+
+        return best_actions[0]
 
 
     def update(
