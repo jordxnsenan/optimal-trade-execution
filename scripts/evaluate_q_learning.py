@@ -1,3 +1,5 @@
+import argparse
+
 from functools import partial
 from statistics import mean
 
@@ -42,22 +44,37 @@ def generate_episodes(
 
 
 def main():
-    config = ExecutionConfig(
-        total_shares=400,
-        num_time_steps=3,
-        num_lots=4,
+    
+    parser = argparse.ArgumentParser(
+        description="Evaluate the Q-learning agent"
     )
+
+    parser.add_argument(
+        "--full-size",
+        action="store_true",
+        help="Use the 10,000-share execution problem.",
+    )
+
+    arguments = parser.parse_args()
+
+    if arguments.full_size:
+        config = ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+        
+    else:
+        config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=3,
+            num_lots=4,
+        )
 
     cost_config = ExecutionCostConfig(
         half_spread_bps=5.0,
         temporary_impact_bps=20.0,
         fee_per_share=0.01,
-    )
-
-    training_paths = generate_episodes(
-        TRAINING_EPISODES,
-        config,
-        TRAINING_SEED_START,
     )
 
     test_paths = generate_episodes(
@@ -83,6 +100,11 @@ def main():
 
     print("Multi-Seed Q-Learning Evaluation")
     print("--------------------------------")
+    
+    print(f"Order size: {config.total_shares:,} shares")
+    print(f"Decision intervals: {config.num_time_steps}")
+    print(f"Inventory lots: {config.num_lots}")
+    
     print(f"Training episodes per agent: {TRAINING_EPISODES}")
     print(f"Test episodes: {TEST_EPISODES}")
     print(f"Training seeds: {len(AGENT_SEEDS)}")
@@ -95,6 +117,13 @@ def main():
     seed_differences = []
 
     for agent_seed in AGENT_SEEDS:
+        
+        training_paths = generate_episodes(
+            TRAINING_EPISODES,
+            config,
+            TRAINING_SEED_START + agent_seed * TRAINING_EPISODES,
+        )
+        
         agent = QLearningAgent(
             config,
             learning_rate=0.1,
@@ -154,9 +183,32 @@ def main():
             record.shares_sold
             for record in reference_environment.execution_history
         ]
+        
+        # measures how much inventory is left until the final interval
+        final_step_shares = sum(
+            record.shares_sold
+            for record in reference_environment.execution_history
+            if record.time_step == config.num_time_steps - 1
+        )
+
+        final_step_percentage = (
+            final_step_shares / config.total_shares * 100
+        )
+
+        flat_market_cost = (
+            reference_environment.implementation_shortfall_bps
+        )
 
         print(f"\nAgent seed: {agent_seed}")
+        print(f"Q-table states: {len(agent.q_table)}")
         print(f"Learned schedule: {learned_schedule}")
+        print(f"Flat-market cost: {flat_market_cost:.4f} bps")
+
+        print(
+            f"Final-interval execution: {final_step_shares:,} shares "
+            f"({final_step_percentage:.1f}%)"
+        )
+
         print(f"Mean execution cost: {mean(q_learning_costs):.4f} bps")
         print(f"Difference from TWAP: {average_difference:+.4f} bps")
 
