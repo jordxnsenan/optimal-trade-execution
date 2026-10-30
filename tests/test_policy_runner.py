@@ -116,5 +116,38 @@ class PolicyRunnerTests(unittest.TestCase):
         self.assertAlmostEqual(environment.total_fees, 4.0)
 
 
+    def test_full_size_twap_matches_flat_market_reference(self):
+        config = ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+
+        environment = ExecutionEnvironment(
+            config,
+            self.cost_config,
+        )
+
+        prices = [100.0] * config.num_time_steps
+        twap_policy = partial(twap_action, config=config)
+
+        execution_cost = run_policy(
+            environment,
+            prices,
+            twap_policy,
+        )
+
+        lots_sold = [
+            record.shares_sold // config.shares_per_lot
+            for record in environment.execution_history
+        ]
+
+        expected_schedule = [2] * 8 + [1] * 4
+
+        self.assertEqual(lots_sold, expected_schedule)
+        self.assertEqual(environment.inventory.remaining_shares, 0)
+        self.assertAlmostEqual(execution_cost, 7.8)
+
+
 if __name__ == "__main__":
     unittest.main()

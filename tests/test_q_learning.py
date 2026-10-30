@@ -174,6 +174,7 @@ class QLearningAgentTests(unittest.TestCase):
             self.agent.update(observation, 3, -1.0, None)
 
         self.assertEqual(self.agent.q_table, {})
+        self.assertEqual(self.agent.action_update_counts, {})
 
     def test_invalid_learning_parameters(self):
         invalid_parameters = [
@@ -296,6 +297,23 @@ class QLearningAgentTests(unittest.TestCase):
                     self.agent.select_action(observation,
                         exploration_rate=exploration_rate,
                     )
+
+
+    def test_action_update_counts(self):
+        observation = {
+            "time_step": 2,
+            "remaining_lots": 3,
+        }
+
+        self.agent.update(observation, 3, -10.0, None)
+        self.agent.update(observation, 3, -10.0, None)
+
+        state = (2, 3)
+
+        self.assertEqual(
+            self.agent.action_update_counts[state][3],
+            2,
+        )
 
 
 if __name__ == "__main__":

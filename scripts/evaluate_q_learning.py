@@ -233,7 +233,44 @@ def main():
             reference_environment.implementation_shortfall_bps
         )
 
+        # measures state-action learning coverage
+        total_state_actions = sum(
+            len(action_values)
+            for action_values in agent.q_table.values()
+        )
+
+        updated_state_actions = sum(
+            len(action_counts)
+            for action_counts in agent.action_update_counts.values()
+        )
+
+        # inspects the agent's initial decision
+        initial_state = (0, config.num_lots)
+
+        initial_action_values = agent.q_table[initial_state]
+        initial_update_counts = agent.action_update_counts.get(
+            initial_state, {}
+        )
+
         print(f"\nAgent seed: {agent_seed}")
+        
+        print(
+            f"Updated state-action pairs: "
+            f"{updated_state_actions}/{total_state_actions}"
+        )
+
+        print("Initial-state Q-values and update counts:")
+
+        for action in (0, 1, 2, config.num_lots):
+            q_value = initial_action_values[action]
+            update_count = initial_update_counts.get(action, 0)
+
+            print(
+                f"  Sell {action:2} lots: "
+                f"Q = {q_value:+.4f}, "
+                f"updates = {update_count}"
+            )
+
         print(f"Q-table states: {len(agent.q_table)}")
         print(f"Learned schedule: {learned_schedule}")
         print(f"Flat-market cost: {flat_market_cost:.4f} bps")

@@ -52,6 +52,7 @@ class QLearningAgent:
         self.random_generator = random.Random(seed)
 
         self.q_table: dict[tuple[int, int], dict[int, float]] = {}
+        self.action_update_counts: dict[tuple[int, int], dict[int, int]] = {}
 
 
     def _get_action_values(self, observation: dict) -> dict[int, float]:
@@ -138,3 +139,11 @@ class QLearningAgent:
         )
 
         action_values[action] = updated_q_value
+        
+        state = get_state(observation)
+
+        if state not in self.action_update_counts:
+            self.action_update_counts[state] = {}
+
+        previous_count = self.action_update_counts[state].get(action, 0)
+        self.action_update_counts[state][action] = previous_count + 1
