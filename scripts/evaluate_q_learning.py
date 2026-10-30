@@ -20,6 +20,7 @@ TEST_EPISODES = 500
 AGENT_SEEDS = (42, 43, 44, 45, 46)
 TRAINING_SEED_START = 0
 TEST_SEED_START = 100_000
+TRAINING_SEED_STRIDE = 100_000
 
 STARTING_PRICE = 100.0
 VOLATILITY_PER_STEP = 0.002
@@ -54,8 +55,20 @@ def main():
         action="store_true",
         help="Use the 10,000-share execution problem.",
     )
-
+    
+    parser.add_argument(
+        "--training-episodes",
+        type=int,
+        default=TRAINING_EPISODES,
+        help="Number of training episodes per agent.",
+    )
+    
     arguments = parser.parse_args()
+    
+    if not 0 < arguments.training_episodes <= TRAINING_SEED_STRIDE:
+        parser.error(
+            "Training episodes must be between 1 and 100,000."
+        )
 
     if arguments.full_size:
         config = ExecutionConfig(
@@ -105,7 +118,7 @@ def main():
     print(f"Decision intervals: {config.num_time_steps}")
     print(f"Inventory lots: {config.num_lots}")
     
-    print(f"Training episodes per agent: {TRAINING_EPISODES}")
+    print(f"Training episodes per agent: {arguments.training_episodes}")
     print(f"Test episodes: {TEST_EPISODES}")
     print(f"Training seeds: {len(AGENT_SEEDS)}")
 
@@ -119,9 +132,9 @@ def main():
     for agent_seed in AGENT_SEEDS:
         
         training_paths = generate_episodes(
-            TRAINING_EPISODES,
+            arguments.training_episodes,
             config,
-            TRAINING_SEED_START + agent_seed * TRAINING_EPISODES,
+            TRAINING_SEED_START + agent_seed * TRAINING_SEED_STRIDE,
         )
         
         agent = QLearningAgent(
