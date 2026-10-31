@@ -94,3 +94,6 @@ python -m unittest discover -s tests -v
 - `tests/` - Automated tests
 - `docs/` - Project design and research documentation
 - `.github/workflows/` - Continuous integration configuration
+
+### Documentation
+- [Q-learning experimental results](docs/experiments/q_learning_results.md)
