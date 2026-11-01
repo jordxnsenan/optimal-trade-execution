@@ -1,30 +1,20 @@
 import argparse
-import json
 import os
 
-from dotenv import load_dotenv
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from datetime import date, datetime, time, timedelta, timezone
 
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from dotenv import load_dotenv
+
+from execai.data.alpaca import fetch_spy_bars
 
 
-API_URL = "https://data.alpaca.markets/v2/stocks/SPY/bars"
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 EXPECTED_BAR_COUNT = 78
 
 
-def format_utc_timestamp(timestamp: datetime) -> str:
-    """converts timestamp to the UTC format expected by Alpaca"""
-
-    utc_timestamp = timestamp.astimezone(timezone.utc)
-    return utc_timestamp.isoformat().replace("+00:00", "Z")
-
-
-def build_query_parameters(trading_date: date) -> dict:
-    """builds a historical data request for one regular trading session"""
+def get_regular_session_bounds(trading_date: date) -> tuple[datetime, datetime]:
+    """returns the start and end of a regular trading session"""
 
     session_start = datetime.combine(
         trading_date,
@@ -38,14 +28,7 @@ def build_query_parameters(trading_date: date) -> dict:
         tzinfo=MARKET_TIMEZONE,
     ) - timedelta(seconds=1)
 
-    return {
-        "timeframe": "5Min",
-        "start": format_utc_timestamp(session_start),
-        "end": format_utc_timestamp(session_end),
-        "feed": "sip",
-        "adjustment": "raw",
-        "limit": 1000,
-    }
+    return session_start, session_end
 
 
 def main():
@@ -71,31 +54,18 @@ def main():
         print("Missing Alpaca credentials. Check your .env file.")
         return
 
-    query_parameters = build_query_parameters(arguments.date)
-    request_url = f"{API_URL}?{urlencode(query_parameters)}"
-
-    request = Request(
-        request_url,
-        headers={
-            "APCA-API-KEY-ID": api_key,
-            "APCA-API-SECRET-KEY": secret_key,
-        },
-    )
+    start_time, end_time = get_regular_session_bounds(arguments.date)
 
     try:
-        with urlopen(request, timeout=30) as response:
-            data = json.load(response)
-
-    except HTTPError as error:
-        print(f"Alpaca request failed (HTTP {error.code}).")
-        print(error.read().decode("utf-8", errors="replace"))
+        bars = fetch_spy_bars(
+            start_time,
+            end_time,
+            api_key,
+            secret_key,
+        )
+    except (RuntimeError, ValueError) as error:
+        print(f"Data request failed: {error}")
         return
-
-    except URLError as error:
-        print(f"Could not connect to Alpaca: {error.reason}")
-        return
-
-    bars = data.get("bars", [])
 
     if not bars:
         print(f"No historical bars returned for {arguments.date}.")
@@ -103,7 +73,11 @@ def main():
 
     required_fields = {"t", "o", "h", "l", "c", "v"}
 
-    if any(not required_fields.issubset(bar) for bar in bars):
+    if any(
+        not isinstance(bar, dict)
+        or not required_fields.issubset(bar)
+        for bar in bars
+    ):
         print("Historical data is missing required OHLCV fields.")
         return
 
@@ -113,15 +87,12 @@ def main():
     print("\nHistorical SPY Data Check")
     print("---------------------------")
     print(f"Date: {arguments.date}")
-    print(f"Feed: {query_parameters['feed']}")
+    print("Feed: SIP")
     print(f"Bars returned: {len(bars)}")
     print(f"First timestamp: {first_bar['t']}")
     print(f"Last timestamp: {last_bar['t']}")
     print(f"First closing price: ${first_bar['c']}")
     print(f"First volume: {first_bar['v']:,}")
-
-    if data.get("next_page_token"):
-        print("Additional data pages are available.")
 
     if len(bars) == EXPECTED_BAR_COUNT:
         print("Expected regular-session bar count received.")
