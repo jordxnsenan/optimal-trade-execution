@@ -1,17 +1,28 @@
-import pandas_market_calendars as market_calendars
-
+from dataclasses import dataclass
 from datetime import date, timedelta
+
 from execai.data.alpaca import fetch_spy_bars
 from execai.data.session_validation import validate_trading_session
 
+import pandas_market_calendars as market_calendars
 
-def download_spy_sessions(
+
+@dataclass
+class SessionDownloadReport:
+    """stores downloaded market data and session validation results"""
+
+    bars: list[dict]
+    completed_sessions: list[date]
+    rejected_sessions: dict[date, str]
+
+
+def download_spy_sessions_with_report(
     start_date: date,
     end_date: date,
     api_key: str,
     secret_key: str,
-) -> list[dict]:
-    """downloads and validates SPY bars for a range of trading days"""
+) -> SessionDownloadReport:
+    """downloads trading sessions and records any validation failures"""
 
     if start_date > end_date:
         raise ValueError("Start date must not be after end date.")
@@ -29,11 +40,16 @@ def download_spy_sessions(
     if schedule.empty:
         raise ValueError("No trading sessions found in the requested date range.")
 
-    all_bars = []
+    report = SessionDownloadReport(
+        bars=[],
+        completed_sessions=[],
+        rejected_sessions={},
+    )
 
     for trading_day, market_hours in schedule.iterrows():
-        session_start = market_hours["market_open"].to_pydatetime()
+        trading_date = trading_day.date()
 
+        session_start = market_hours["market_open"].to_pydatetime()
         session_end = market_hours["market_close"].to_pydatetime() - timedelta(
             seconds=1
         )
@@ -45,8 +61,36 @@ def download_spy_sessions(
             secret_key,
         )
 
-        validate_trading_session(bars, trading_day.date())
+        try:
+            validate_trading_session(bars, trading_date)
+        except ValueError as error:
+            report.rejected_sessions[trading_date] = str(error)
+            continue
 
-        all_bars.extend(bars)
+        report.bars.extend(bars)
+        report.completed_sessions.append(trading_date)
 
-    return all_bars
+    return report
+
+
+def download_spy_sessions(
+    start_date: date,
+    end_date: date,
+    api_key: str,
+    secret_key: str,
+) -> list[dict]:
+    """downloads and validates SPY bars for a range of trading days"""
+
+    report = download_spy_sessions_with_report(
+        start_date,
+        end_date,
+        api_key,
+        secret_key,
+    )
+
+    if report.rejected_sessions:
+        failed_date, reason = next(iter(report.rejected_sessions.items()))
+
+        raise ValueError(f"Trading session {failed_date} was rejected: {reason}")
+
+    return report.bars
