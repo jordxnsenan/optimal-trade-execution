@@ -1,14 +1,19 @@
 import json
+import time
 
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-
 SPY_BARS_URL = "https://data.alpaca.markets/v2/stocks/SPY/bars"
+
 PAGE_LIMIT = 1000
 REQUEST_TIMEOUT_SECONDS = 30
+RATE_LIMIT_STATUS_CODE = 429
+MAX_REQUEST_ATTEMPTS = 3
+DEFAULT_RETRY_DELAY_SECONDS = 60
+RETRY_BUFFER_SECONDS = 1
 
 
 def _format_utc_timestamp(timestamp: datetime) -> str:
@@ -19,6 +24,46 @@ def _format_utc_timestamp(timestamp: datetime) -> str:
 
     utc_timestamp = timestamp.astimezone(timezone.utc)
     return utc_timestamp.isoformat().replace("+00:00", "Z")
+
+
+def _fetch_page(request: Request) -> dict:
+    """retrieve one API response. retries when rate limited"""
+
+    attempts = 0
+
+    while True:
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                return json.load(response)
+
+        except HTTPError as error:
+            attempts += 1
+
+            if error.code != RATE_LIMIT_STATUS_CODE or attempts >= MAX_REQUEST_ATTEMPTS:
+                raise RuntimeError(
+                    f"Alpaca request failed (HTTP {error.code})."
+                ) from error
+
+            wait_seconds = DEFAULT_RETRY_DELAY_SECONDS
+
+            # time provided when req. limit resets
+            reset_timestamp = (
+                error.headers.get("X-RateLimit-Reset") if error.headers else None
+            )
+
+            if reset_timestamp is not None:
+                try:
+                    wait_seconds = max(
+                        1.0,
+                        float(reset_timestamp) - time.time() + RETRY_BUFFER_SECONDS,
+                    )
+                except ValueError:
+                    pass
+
+            time.sleep(wait_seconds)
+
+        except URLError as error:
+            raise RuntimeError("Could not connect to Alpaca.") from error
 
 
 def fetch_spy_bars(
@@ -66,19 +111,7 @@ def fetch_spy_bars(
             },
         )
 
-        try:
-            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-                response_data = json.load(response)
-
-        except HTTPError as error:
-            raise RuntimeError(
-                f"Alpaca request failed (HTTP {error.code})."
-            ) from error
-
-        except URLError as error:
-            raise RuntimeError(
-                "Could not connect to Alpaca."
-            ) from error
+        response_data = _fetch_page(request)
 
         if not isinstance(response_data, dict) or not isinstance(
             response_data.get("bars"), list
