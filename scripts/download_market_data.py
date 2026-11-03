@@ -1,33 +1,128 @@
 import argparse
+import json
 import os
 
 from datetime import date
-from pathlib import Path
 from dotenv import load_dotenv
+from pathlib import Path
 
-from execai.data.ingestion import download_spy_sessions
-from execai.data.storage import save_bars_to_csv
+from execai.data.ingestion import iter_spy_sessions
+from execai.data.storage import (
+    find_completed_sessions,
+    save_session_checkpoint,
+)
 
-RAW_DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "raw"
+CHECKPOINT_DIRECTORY = (
+    Path(__file__).resolve().parents[1] / "data" / "raw" / "SPY_5min_SIP"
+)
+
+
+def download_and_save_sessions(
+    start_date: date,
+    end_date: date,
+    api_key: str,
+    secret_key: str,
+    checkpoint_directory: Path,
+) -> dict:
+    """downloads trading sessions and save each completed session"""
+
+    if start_date > end_date:
+        raise ValueError("Start date must not be after end date.")
+
+    completed_dates = find_completed_sessions(
+        checkpoint_directory,
+        start_date,
+        end_date,
+    )
+
+    downloaded_dates = []
+    rejected_sessions = {}
+    download_error = None
+
+    print(f"Found {len(completed_dates)} existing valid checkpoints.")
+
+    try:
+        for result in iter_spy_sessions(
+            start_date,
+            end_date,
+            api_key,
+            secret_key,
+            skip_dates=completed_dates,
+        ):
+            trading_date = result.trading_date
+
+            if result.validation_error is not None:
+                rejected_sessions[str(trading_date)] = result.validation_error
+                print(f"Rejected {trading_date}: {result.validation_error}")
+                continue
+
+            save_session_checkpoint(
+                result.bars,
+                trading_date,
+                checkpoint_directory,
+            )
+
+            downloaded_dates.append(str(trading_date))
+
+            print(f"Saved {trading_date}: " f"{len(result.bars)} bars")
+
+    except (RuntimeError, ValueError, OSError) as error:
+        download_error = str(error)
+
+    report = {
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "provider": "Alpaca",
+        "symbol": "SPY",
+        "timeframe": "5Min",
+        "feed": "sip",
+        "adjustment": "raw",
+        "existing_sessions": sorted(
+            str(trading_date) for trading_date in completed_dates
+        ),
+        "downloaded_sessions": downloaded_dates,
+        "rejected_sessions": rejected_sessions,
+        "download_error": download_error,
+    }
+
+    report_directory = checkpoint_directory / "reports"
+    report_directory.mkdir(parents=True, exist_ok=True)
+
+    report_path = report_directory / f"{start_date}_{end_date}.json"
+
+    report_path.write_text(
+        json.dumps(report, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    print("\nDownload Summary")
+    print("----------------")
+    print(f"Previously completed: {len(completed_dates)}")
+    print(f"Newly downloaded: {len(downloaded_dates)}")
+    print(f"Rejected sessions: {len(rejected_sessions)}")
+    print(f"Report saved to: {report_path}")
+
+    if download_error is not None:
+        raise RuntimeError(f"Download stopped: {download_error}")
+
+    return report
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download historical five-minute SPY market data."
-    )
+    parser = argparse.ArgumentParser(description="Download historical SPY market data.")
 
     parser.add_argument(
         "--start",
         type=date.fromisoformat,
         required=True,
-        help="First trading date in YYYY-MM-DD format.",
+        help="First date in YYYY-MM-DD format.",
     )
 
     parser.add_argument(
         "--end",
         type=date.fromisoformat,
         required=True,
-        help="Last trading date in YYYY-MM-DD format.",
+        help="Last date in YYYY-MM-DD format.",
     )
 
     arguments = parser.parse_args()
@@ -43,30 +138,18 @@ def main():
     if not api_key or not secret_key:
         parser.error("Missing Alpaca credentials. Check your .env file.")
 
-    filename = f"SPY_5min_SIP_raw_{arguments.start}_{arguments.end}.csv"
-
-    output_path = RAW_DATA_DIRECTORY / filename
-
-    if output_path.exists():
-        parser.exit(1, f"File already exists: {output_path}\n")
-
-    print(f"Downloading SPY data from {arguments.start} to {arguments.end}...")
+    print(f"Downloading SPY data from " f"{arguments.start} to {arguments.end}...")
 
     try:
-        bars = download_spy_sessions(
+        download_and_save_sessions(
             arguments.start,
             arguments.end,
             api_key,
             secret_key,
+            CHECKPOINT_DIRECTORY,
         )
-
-        save_bars_to_csv(bars, output_path)
-
     except (RuntimeError, ValueError, OSError) as error:
         parser.exit(1, f"Download failed: {error}\n")
-
-    print(f"Successfully downloaded {len(bars)} market bars.")
-    print(f"Saved to: {output_path}")
 
 
 if __name__ == "__main__":
