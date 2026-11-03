@@ -1,7 +1,9 @@
 import csv
+import os
 
 from datetime import date
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from execai.data.session_validation import validate_trading_session
 from execai.data.validation import validate_bars
@@ -90,3 +92,28 @@ def find_completed_sessions(
         completed_dates.add(trading_date)
 
     return completed_dates
+
+
+def save_session_checkpoint(
+    bars: list[dict],
+    trading_date: date,
+    checkpoint_directory: Path,
+) -> Path:
+    """saves a complete trading session without overwriting existing data"""
+
+    validate_trading_session(bars, trading_date)
+
+    checkpoint_directory.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_path = checkpoint_directory / f"{trading_date}.csv"
+
+    # writes the complete file before making it available as a checkpoint
+    with TemporaryDirectory(dir=checkpoint_directory) as temporary_directory:
+        temporary_path = Path(temporary_directory) / checkpoint_path.name
+
+        save_bars_to_csv(bars, temporary_path)
+
+        # publishes without replacing an existing checkpoint
+        os.link(temporary_path, checkpoint_path)
+
+    return checkpoint_path
