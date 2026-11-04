@@ -37,4 +37,28 @@ The main fields are:
 - High price
 - Low price
 - Close price
-- Trading volume.
+- Trading volume
+
+
+## Historical Dataset Coverage
+
+The historical SPY dataset was collected using Alpaca's SIP market data feed. It contains five-minute OHLCV observations from January 2023 through September 2026.
+
+The data is divided chronologically into the following separate periods:
+
+| Partition  | Period                 | Trading Sessions | Five-Minute Bars |
+|------------|------------------------|------------------|------------------|
+| Training   | 2023–2024              | 502              | 38,976           |
+| Validation | 2025 | 250             | 19,392           |
+| Final Test | January–September 2026 | 187              | 14,586           |
+| Total      |                        | 939              | 72,954           |
+
+All three periods achieved 100% coverage against the expected NYSE trading calendar, with the validation process also accounting for scheduled early market closures.
+
+Each trading session is stored as an individual CSV checkpoint. The ingestion pipeline verifies existing checkpoints before making additional API requests to allow interrupted downloads to resume. The raw market data is stored locally under `data/raw/SPY_5min_SIP/`
+and is excluded from Git.
+
+### Data Separation
+
+The 2023–2024 training period will be used to estimate market characteristics and train the reinforcement learning agents. The 2025 validation period will support model development and hyperparameter selection. The January–September 2026 period is reserved for final testing. Model performance on this period will not be examined until the
+experimental configuration has been finalized. Historical prices and volumes will be used to inform market simulation and replay. Transaction costs and the effect of our hypothetical trades will continue to be modeled separately.
