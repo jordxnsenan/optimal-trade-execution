@@ -2,6 +2,7 @@ import math
 
 from execai.environment.config import ExecutionConfig
 from execai.environment.historical import FIRST_DECISION_BAR_INDEX
+from execai.policies.schedules import scheduled_action
 
 REGULAR_SESSION_BARS = 78
 
@@ -62,15 +63,4 @@ def build_vwap_schedule(
 def vwap_action(observation: dict, schedule: list[int]) -> int:
     """returns the planned VWAP trade for the current time step"""
 
-    time_step = observation["time_step"]
-    remaining_lots = observation["remaining_lots"]
-
-    if time_step < 0 or time_step >= len(schedule):
-        raise ValueError("Time step is outside the VWAP schedule.")
-
-    lots_to_sell = schedule[time_step]
-
-    if lots_to_sell < 0 or lots_to_sell > remaining_lots:
-        raise ValueError("VWAP trade exceeds available inventory.")
-
-    return lots_to_sell
+    return scheduled_action(observation, schedule)
