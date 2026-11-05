@@ -1,4 +1,5 @@
 import csv
+import json
 
 from datetime import date
 from functools import partial
@@ -10,12 +11,14 @@ from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
 from execai.evaluation.historical import evaluate_historical_sessions
 from execai.policies.baselines import immediate_action, twap_action
+from execai.data.splits import DEFAULT_SPLITS
+from execai.policies.vwap import build_vwap_schedule, vwap_action
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / "data" / "raw" / "SPY_5min_SIP"
 OUTPUT_PATH = PROJECT_ROOT / "results" / "validation" / "2025_baselines.csv"
-
+CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
 ORDER_SHARES = 10_000
 TIME_STEPS = 12
 INVENTORY_LOTS = 20
@@ -25,10 +28,32 @@ TEMPORARY_IMPACT_BPS = 20.0
 FEE_PER_SHARE = 0.01
 
 
+def load_vwap_schedule(
+    config: ExecutionConfig,
+    calibration_path: Path,
+) -> list[int]:
+    """builds a VWAP schedule from training-derived volume forecasts"""
+
+    calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+
+    training_range = DEFAULT_SPLITS.training
+
+    if calibration.get("training_start") != str(
+        training_range.start_date
+    ) or calibration.get("training_end") != str(training_range.end_date):
+        raise ValueError("VWAP calibration must use the defined training period.")
+
+    return build_vwap_schedule(
+        config,
+        calibration["volume_fractions"],
+    )
+
+
 def evaluate_validation_baselines(
     checkpoint_directory: Path,
+    calibration_path: Path = CALIBRATION_PATH,
 ) -> dict[str, dict[date, float]]:
-    """evaluates traditional execution policies on the validation dataset"""
+    """evaluates execution baselines on the validation dataset"""
 
     sessions = load_dataset_split(
         checkpoint_directory,
@@ -47,9 +72,15 @@ def evaluate_validation_baselines(
         fee_per_share=FEE_PER_SHARE,
     )
 
+    vwap_schedule = load_vwap_schedule(
+        config,
+        calibration_path,
+    )
+
     policies = {
         "Immediate": immediate_action,
         "TWAP": partial(twap_action, config=config),
+        "VWAP": partial(vwap_action, schedule=vwap_schedule),
     }
 
     return evaluate_historical_sessions(
@@ -66,10 +97,17 @@ def save_daily_results(
 ) -> None:
     """saves paired execution costs for each trading date"""
 
-    immediate_costs = results["Immediate"]
-    twap_costs = results["TWAP"]
+    policy_names = ("Immediate", "TWAP", "VWAP")
 
-    if not immediate_costs or immediate_costs.keys() != twap_costs.keys():
+    if any(
+        policy_name not in results or not results[policy_name]
+        for policy_name in policy_names
+    ):
+        raise ValueError("Policies must have matching trading dates.")
+
+    trading_dates = set(results["Immediate"])
+
+    if any(set(results[policy_name]) != trading_dates for policy_name in policy_names):
         raise ValueError("Policies must have matching trading dates.")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,20 +120,25 @@ def save_daily_results(
                 "trading_date",
                 "immediate_bps",
                 "twap_bps",
+                "vwap_bps",
                 "twap_minus_immediate_bps",
+                "vwap_minus_twap_bps",
             ]
         )
 
-        for trading_date in sorted(immediate_costs):
-            immediate_cost = immediate_costs[trading_date]
-            twap_cost = twap_costs[trading_date]
+        for trading_date in sorted(trading_dates):
+            immediate_cost = results["Immediate"][trading_date]
+            twap_cost = results["TWAP"][trading_date]
+            vwap_cost = results["VWAP"][trading_date]
 
             writer.writerow(
                 [
                     trading_date.isoformat(),
                     immediate_cost,
                     twap_cost,
+                    vwap_cost,
                     twap_cost - immediate_cost,
+                    vwap_cost - twap_cost,
                 ]
             )
 
@@ -119,12 +162,27 @@ def main() -> None:
     print(f"Trading sessions: {len(immediate_costs)}")
 
     print("\nMean implementation shortfall:")
-    print(f"Immediate: {mean(immediate_costs.values()):.4f} bps")
-    print(f"TWAP: {mean(twap_costs.values()):.4f} bps")
 
-    print(f"\nTWAP minus Immediate: " f"{mean(paired_differences):+.4f} bps")
+    for policy_name, daily_costs in results.items():
+        average_cost = mean(daily_costs.values())
+        print(f"{policy_name}: {average_cost:.4f} bps")
 
-    print("Negative differences favor TWAP.")
+    trading_dates = sorted(results["Immediate"])
+
+    twap_differences = [
+        results["TWAP"][trading_date] - results["Immediate"][trading_date]
+        for trading_date in trading_dates
+    ]
+
+    vwap_differences = [
+        results["VWAP"][trading_date] - results["TWAP"][trading_date]
+        for trading_date in trading_dates
+    ]
+
+    print(f"\nTWAP minus Immediate: {mean(twap_differences):+.4f} bps")
+    print(f"VWAP minus TWAP: {mean(vwap_differences):+.4f} bps")
+    print("Negative differences favor the first named policy.")
+
     print(f"\nSaved daily results to: {OUTPUT_PATH}")
 
 

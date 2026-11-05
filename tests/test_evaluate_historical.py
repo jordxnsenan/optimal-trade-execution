@@ -1,4 +1,5 @@
 import csv
+import json
 import unittest
 
 from datetime import date
@@ -27,6 +28,10 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                 self.first_date: -7.0,
                 self.second_date: 12.0,
             },
+            "VWAP": {
+                self.first_date: 10.0,
+                self.second_date: 9.0,
+            },
         }
 
     @patch("scripts.evaluate_historical.evaluate_historical_sessions")
@@ -42,7 +47,24 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
 
         mock_evaluate.return_value = self.results
 
-        results = evaluate_validation_baselines(checkpoint_directory)
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration = {
+                "training_start": "2023-01-01",
+                "training_end": "2024-12-31",
+                "volume_fractions": [1.0] * 78,
+            }
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            results = evaluate_validation_baselines(
+                checkpoint_directory,
+                calibration_path,
+            )
 
         mock_load.assert_called_once_with(
             checkpoint_directory,
@@ -50,6 +72,9 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
         )
 
         self.assertEqual(results, self.results)
+
+        policies = mock_evaluate.call_args.args[3]
+        self.assertIn("VWAP", policies)
 
     def test_saves_daily_execution_costs(self):
         with TemporaryDirectory() as directory:
@@ -73,6 +98,16 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                 -33.0,
             )
 
+            self.assertAlmostEqual(
+                float(rows[0]["vwap_bps"]),
+                10.0,
+            )
+
+            self.assertAlmostEqual(
+                float(rows[0]["vwap_minus_twap_bps"]),
+                17.0,
+            )
+
     def test_rejects_mismatched_trading_dates(self):
         self.results["TWAP"].pop(self.second_date)
 
@@ -86,6 +121,36 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                 save_daily_results(self.results, output_path)
 
             self.assertFalse(output_path.exists())
+
+    def test_rejects_vwap_calibration_from_wrong_period(self):
+        from execai.environment.config import ExecutionConfig
+        from scripts.evaluate_historical import load_vwap_schedule
+
+        config = ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+
+        calibration = {
+            "training_start": "2025-01-01",
+            "training_end": "2025-12-31",
+            "volume_fractions": [1.0] * 78,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "training period"):
+                load_vwap_schedule(
+                    config,
+                    calibration_path,
+                )
 
 
 if __name__ == "__main__":
