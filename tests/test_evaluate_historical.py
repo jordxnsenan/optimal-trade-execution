@@ -32,6 +32,14 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                 self.first_date: 10.0,
                 self.second_date: 9.0,
             },
+            "AC Risk-Neutral": {
+                self.first_date: 8.0,
+                self.second_date: 7.0,
+            },
+            "AC Risk-Sensitive": {
+                self.first_date: 10.0,
+                self.second_date: 9.0,
+            },
         }
 
     @patch("scripts.evaluate_historical.evaluate_historical_sessions")
@@ -54,6 +62,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                 "training_start": "2023-01-01",
                 "training_end": "2024-12-31",
                 "volume_fractions": [1.0] * 78,
+                "volatility_per_step": 0.000721,
             }
 
             calibration_path.write_text(
@@ -74,7 +83,10 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
         self.assertEqual(results, self.results)
 
         policies = mock_evaluate.call_args.args[3]
+
         self.assertIn("VWAP", policies)
+        self.assertIn("AC Risk-Neutral", policies)
+        self.assertIn("AC Risk-Sensitive", policies)
 
     def test_saves_daily_execution_costs(self):
         with TemporaryDirectory() as directory:
@@ -106,6 +118,21 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             self.assertAlmostEqual(
                 float(rows[0]["vwap_minus_twap_bps"]),
                 17.0,
+            )
+
+            self.assertAlmostEqual(
+                float(rows[0]["ac_risk_neutral_bps"]),
+                8.0,
+            )
+
+            self.assertAlmostEqual(
+                float(rows[0]["ac_risk_sensitive_bps"]),
+                10.0,
+            )
+
+            self.assertAlmostEqual(
+                float(rows[0]["ac_risk_neutral_minus_twap_bps"]),
+                15.0,
             )
 
     def test_rejects_mismatched_trading_dates(self):
@@ -151,6 +178,40 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                     config,
                     calibration_path,
                 )
+
+    @patch("scripts.evaluate_historical.load_dataset_split")
+    def test_almgren_chriss_baselines_on_flat_market(self, mock_load):
+        mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": [1.0] * 78,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+            )
+
+        trading_date = self.first_date
+
+        risk_neutral_cost = results["AC Risk-Neutral"][trading_date]
+        risk_sensitive_cost = results["AC Risk-Sensitive"][trading_date]
+        twap_cost = results["TWAP"][trading_date]
+
+        self.assertAlmostEqual(risk_neutral_cost, 7.8)
+        self.assertAlmostEqual(risk_neutral_cost, twap_cost)
+        self.assertGreater(risk_sensitive_cost, risk_neutral_cost)
 
 
 if __name__ == "__main__":
