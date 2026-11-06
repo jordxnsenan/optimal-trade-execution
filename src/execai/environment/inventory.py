@@ -12,8 +12,8 @@ class Inventory:
     def remaining_shares(self) -> int:
         return self.remaining_lots * self.config.shares_per_lot
 
-    def execute_sell(self, num_lots: int) -> int:
-        """sells inventory lots + returns number of shares sold"""
+    def preview_sell(self, num_lots: int) -> int:
+        """validates a trade without changing inventory"""
 
         if not isinstance(num_lots, int) or isinstance(num_lots, bool):
             raise ValueError("Number of lots must be an integer.")
@@ -24,7 +24,12 @@ class Inventory:
         if num_lots > self.remaining_lots:
             raise ValueError("Cannot sell more lots than remain.")
 
-        shares_sold = num_lots * self.config.shares_per_lot
+        return num_lots * self.config.shares_per_lot
+
+    def execute_sell(self, num_lots: int) -> int:
+        """sells inventory lots and returns the number of shares sold"""
+
+        shares_sold = self.preview_sell(num_lots)
         self.remaining_lots -= num_lots
 
         return shares_sold

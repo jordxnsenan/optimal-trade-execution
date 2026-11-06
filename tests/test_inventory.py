@@ -1,4 +1,3 @@
-
 import unittest
 
 from execai.environment.config import ExecutionConfig
@@ -50,6 +49,13 @@ class InventoryTests(unittest.TestCase):
         self.inventory.execute_sell(8)
         self.inventory.reset()
 
+        self.assertEqual(self.inventory.remaining_lots, 20)
+        self.assertEqual(self.inventory.remaining_shares, 10_000)
+
+    def test_preview_sell_does_not_change_inventory(self):
+        shares_to_sell = self.inventory.preview_sell(4)
+
+        self.assertEqual(shares_to_sell, 2_000)
         self.assertEqual(self.inventory.remaining_lots, 20)
         self.assertEqual(self.inventory.remaining_shares, 10_000)
 

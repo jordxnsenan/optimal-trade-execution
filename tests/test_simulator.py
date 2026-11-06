@@ -16,7 +16,7 @@ class ExecutionEnvironmentTests(unittest.TestCase):
 
         self.environment = ExecutionEnvironment(self.config)
         self.prices = [100.0, 99.0, 101.0]
-        
+
         self.cost_config = ExecutionCostConfig(
             half_spread_bps=5.0,
             temporary_impact_bps=20.0,
@@ -127,8 +127,7 @@ class ExecutionEnvironmentTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.environment.reset([100.0, float("nan"), 101.0])
-            
-    
+
     def test_trade_costs_reduce_proceeds_and_reward(self):
         self.cost_environment.reset([100.0, 100.0, 100.0])
 
@@ -198,7 +197,6 @@ class ExecutionEnvironmentTests(unittest.TestCase):
         self.assertEqual(self.cost_environment.total_proceeds, 0.0)
         self.assertEqual(self.cost_environment.total_fees, 0.0)
         self.assertEqual(self.cost_environment.inventory.remaining_shares, 400)
-
 
     def test_execution_history_starts_empty(self):
         self.environment.reset(self.prices)
@@ -285,6 +283,76 @@ class ExecutionEnvironmentTests(unittest.TestCase):
             self.environment.step(5)
 
         self.assertEqual(len(self.environment.execution_history), 0)
+
+    def test_lower_liquidity_increases_execution_cost(self):
+        environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+            liquidity_profile=[0.5, 1.0, 1.0],
+        )
+
+        environment.reset([100.0, 100.0, 100.0])
+
+        _, reward, done = environment.step(1)
+
+        self.assertAlmostEqual(environment.total_proceeds, 9984.0)
+        self.assertAlmostEqual(reward, -4.0)
+        self.assertEqual(environment.inventory.remaining_shares, 300)
+        self.assertFalse(done)
+
+    def test_higher_liquidity_reduces_execution_cost(self):
+        environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+            liquidity_profile=[2.0, 1.0, 1.0],
+        )
+
+        environment.reset([100.0, 100.0, 100.0])
+
+        _, reward, done = environment.step(1)
+
+        self.assertAlmostEqual(environment.total_proceeds, 9991.5)
+        self.assertAlmostEqual(reward, -2.125)
+        self.assertFalse(done)
+
+    def test_invalid_liquidity_profile(self):
+        invalid_profiles = [
+            [1.0, 1.0],
+            [0.0, 1.0, 1.0],
+            [1.0, float("nan"), 1.0],
+            [True, 1.0, 1.0],
+        ]
+
+        for profile in invalid_profiles:
+            with self.subTest(profile=profile):
+                with self.assertRaises(ValueError):
+                    ExecutionEnvironment(
+                        self.config,
+                        self.cost_config,
+                        liquidity_profile=profile,
+                    )
+
+    def test_failed_execution_preserves_environment_state(self):
+        environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+            liquidity_profile=[1.0, 1.0, 0.001],
+        )
+
+        environment.reset([100.0, 100.0, 100.0])
+
+        environment.step(0)
+        environment.step(0)
+
+        with self.assertRaisesRegex(ValueError, "discount"):
+            environment.step(0)
+
+        self.assertEqual(environment.current_step, 2)
+        self.assertEqual(environment.inventory.remaining_shares, 400)
+        self.assertEqual(environment.total_proceeds, 0.0)
+        self.assertEqual(environment.total_fees, 0.0)
+        self.assertEqual(len(environment.execution_history), 2)
+        self.assertFalse(environment.is_done)
 
 
 if __name__ == "__main__":
