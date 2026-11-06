@@ -10,6 +10,7 @@ class ExecutionCostConfig:
     half_spread_bps: float = 0.0
     temporary_impact_bps: float = 0.0
     fee_per_share: float = 0.0
+    impact_model: str = "linear"
 
     def __post_init__(self):
         costs = [
@@ -25,6 +26,9 @@ class ExecutionCostConfig:
 
         if total_discount_bps >= BASIS_POINTS_MULTIPLIER:
             raise ValueError("Execution price discount must be below 100%.")
+
+        if self.impact_model not in ("linear", "square_root"):
+            raise ValueError("Unsupported market impact model.")
 
 
 @dataclass(frozen=True)
@@ -69,7 +73,14 @@ def calculate_sell_execution(
 
     order_fraction = shares_sold / total_order_shares
 
-    impact_bps = cost_config.temporary_impact_bps * order_fraction / relative_liquidity
+    trade_intensity = order_fraction / relative_liquidity
+
+    if cost_config.impact_model == "square_root":
+        impact_factor = math.sqrt(trade_intensity)
+    else:
+        impact_factor = trade_intensity
+
+    impact_bps = cost_config.temporary_impact_bps * impact_factor
 
     total_discount_bps = cost_config.half_spread_bps + impact_bps
 

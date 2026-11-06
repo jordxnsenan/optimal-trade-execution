@@ -149,6 +149,79 @@ class ExecutionCostTests(unittest.TestCase):
                 relative_liquidity=0.001,
             )
 
+    def test_default_impact_model_is_linear(self):
+        cost_config = ExecutionCostConfig(
+            temporary_impact_bps=20.0,
+        )
+
+        self.assertEqual(cost_config.impact_model, "linear")
+
+        execution = calculate_sell_execution(
+            100.0,
+            100,
+            400,
+            cost_config,
+        )
+
+        self.assertAlmostEqual(execution.execution_price, 99.95)
+
+    def test_square_root_impact_calculation(self):
+        cost_config = ExecutionCostConfig(
+            half_spread_bps=5.0,
+            temporary_impact_bps=20.0,
+            fee_per_share=0.01,
+            impact_model="square_root",
+        )
+
+        execution = calculate_sell_execution(
+            100.0,
+            100,
+            400,
+            cost_config,
+        )
+
+        # sqrt(100 / 400) = 0.5
+        # temp. impact is 10 basis points
+        self.assertAlmostEqual(execution.execution_price, 99.85)
+        self.assertAlmostEqual(execution.fees, 1.0)
+        self.assertAlmostEqual(execution.net_proceeds, 9984.0)
+
+    def test_square_root_impact_respects_liquidity(self):
+        cost_config = ExecutionCostConfig(
+            temporary_impact_bps=20.0,
+            impact_model="square_root",
+        )
+
+        low_liquidity = calculate_sell_execution(
+            100.0,
+            100,
+            400,
+            cost_config,
+            relative_liquidity=0.5,
+        )
+
+        high_liquidity = calculate_sell_execution(
+            100.0,
+            100,
+            400,
+            cost_config,
+            relative_liquidity=2.0,
+        )
+
+        self.assertLess(
+            low_liquidity.execution_price,
+            high_liquidity.execution_price,
+        )
+
+    def test_rejects_unknown_impact_model(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Unsupported market impact model",
+        ):
+            ExecutionCostConfig(
+                impact_model="unknown",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
