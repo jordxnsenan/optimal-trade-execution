@@ -13,6 +13,14 @@ from scripts.evaluate_historical import (
     summarize_almgren_chriss_risk,
 )
 
+from execai.environment.config import ExecutionConfig
+from execai.environment.costs import ExecutionCostConfig
+from execai.environment.liquidity import build_relative_liquidity_profile
+from execai.policies.almgren_chriss import (
+    calculate_expected_cost_bps,
+    optimize_almgren_chriss_schedule,
+)
+
 
 class HistoricalEvaluationScriptTests(unittest.TestCase):
 
@@ -255,6 +263,129 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
         self.assertLessEqual(
             sensitive["comparison_objective_bps"],
             neutral["comparison_objective_bps"],
+        )
+
+    @patch("scripts.evaluate_historical.load_dataset_split")
+    def test_liquidity_aware_evaluation_reoptimizes_ac(self, mock_load):
+        mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
+
+        volume_fractions = [1.0] * 78
+        volume_fractions[6] = 8.0
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": volume_fractions,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            reference_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                liquidity_aware=False,
+            )
+
+            liquidity_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                liquidity_aware=True,
+            )
+
+        trading_date = self.first_date
+
+        # original model should retain its known result
+        self.assertAlmostEqual(
+            reference_results["Immediate"][trading_date],
+            26.0,
+        )
+
+        # higher first-interval liquidity reduces immediate impact
+        self.assertLess(
+            liquidity_results["Immediate"][trading_date],
+            reference_results["Immediate"][trading_date],
+        )
+
+        # risk-neutral AC should minimize cost under the same liquidity assumptions used to evaluate TWAP
+        self.assertLessEqual(
+            liquidity_results["AC Risk-Neutral"][trading_date],
+            liquidity_results["TWAP"][trading_date] + 1e-9,
+        )
+
+    def test_liquidity_aware_risk_summary_uses_forecast_liquidity(self):
+        volume_fractions = [1.0] * 78
+        volume_fractions[6] = 8.0
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": volume_fractions,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            summaries = summarize_almgren_chriss_risk(
+                self.results,
+                calibration_path,
+                liquidity_aware=True,
+            )
+
+        config = ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+
+        cost_config = ExecutionCostConfig(
+            half_spread_bps=5.0,
+            temporary_impact_bps=20.0,
+            fee_per_share=0.01,
+        )
+
+        liquidity_profile = build_relative_liquidity_profile(
+            volume_fractions,
+            config,
+        )
+
+        schedule = optimize_almgren_chriss_schedule(
+            config,
+            cost_config,
+            reference_price=100.0,
+            volatility_per_step=0.000721,
+            risk_aversion=0.0,
+            liquidity_profile=liquidity_profile,
+        )
+
+        expected_cost = calculate_expected_cost_bps(
+            schedule,
+            config,
+            cost_config,
+            reference_price=100.0,
+            liquidity_profile=liquidity_profile,
+        )
+
+        self.assertAlmostEqual(
+            summaries["AC Risk-Neutral"]["expected_cost_bps"],
+            expected_cost,
+        )
+
+        self.assertLessEqual(
+            summaries["AC Risk-Sensitive"]["comparison_objective_bps"],
+            summaries["AC Risk-Neutral"]["comparison_objective_bps"],
         )
 
 

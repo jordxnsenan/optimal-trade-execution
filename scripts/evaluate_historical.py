@@ -1,3 +1,4 @@
+import argparse
 import csv
 import json
 
@@ -9,6 +10,7 @@ from statistics import mean, stdev
 from execai.data.dataset import load_dataset_split
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
+from execai.environment.liquidity import build_relative_liquidity_profile
 from execai.evaluation.historical import evaluate_historical_sessions
 from execai.policies.baselines import immediate_action, twap_action
 from execai.data.splits import DEFAULT_SPLITS
@@ -24,6 +26,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / "data" / "raw" / "SPY_5min_SIP"
 OUTPUT_PATH = PROJECT_ROOT / "results" / "validation" / "2025_baselines.csv"
+LIQUIDITY_AWARE_OUTPUT_PATH = (
+    PROJECT_ROOT / "results" / "validation" / "2025_baselines_liquidity_aware.csv"
+)
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
 ORDER_SHARES = 10_000
 TIME_STEPS = 12
@@ -51,6 +56,22 @@ def load_training_calibration(calibration_path: Path) -> dict:
         raise ValueError("Calibration must use the defined training period.")
 
     return calibration
+
+
+def build_experiment_liquidity_profile(
+    config: ExecutionConfig,
+    calibration: dict,
+    liquidity_aware: bool,
+) -> list[float] | None:
+    """returns forecast liquidity when enabled for an experiment"""
+
+    if not liquidity_aware:
+        return None
+
+    return build_relative_liquidity_profile(
+        calibration["volume_fractions"],
+        config,
+    )
 
 
 def load_vwap_schedule(
@@ -88,6 +109,7 @@ def build_evaluation_settings() -> tuple[ExecutionConfig, ExecutionCostConfig]:
 def evaluate_validation_baselines(
     checkpoint_directory: Path,
     calibration_path: Path = CALIBRATION_PATH,
+    liquidity_aware: bool = False,
 ) -> dict[str, dict[date, float]]:
     """evaluates execution baselines on the validation dataset"""
 
@@ -99,6 +121,12 @@ def evaluate_validation_baselines(
     config, cost_config = build_evaluation_settings()
 
     calibration = load_training_calibration(calibration_path)
+
+    liquidity_profile = build_experiment_liquidity_profile(
+        config,
+        calibration,
+        liquidity_aware,
+    )
 
     vwap_schedule = build_vwap_schedule(
         config,
@@ -113,6 +141,7 @@ def evaluate_validation_baselines(
         reference_price=OPTIMIZATION_REFERENCE_PRICE,
         volatility_per_step=volatility,
         risk_aversion=AC_RISK_NEUTRAL,
+        liquidity_profile=liquidity_profile,
     )
 
     risk_sensitive_schedule = optimize_almgren_chriss_schedule(
@@ -121,6 +150,7 @@ def evaluate_validation_baselines(
         reference_price=OPTIMIZATION_REFERENCE_PRICE,
         volatility_per_step=volatility,
         risk_aversion=AC_RISK_SENSITIVE,
+        liquidity_profile=liquidity_profile,
     )
 
     policies = {
@@ -142,6 +172,7 @@ def evaluate_validation_baselines(
         config,
         cost_config,
         policies,
+        liquidity_profile=liquidity_profile,
     )
 
 
@@ -209,6 +240,7 @@ def save_daily_results(
 def summarize_almgren_chriss_risk(
     results: dict[str, dict[date, float]],
     calibration_path: Path,
+    liquidity_aware: bool = False,
 ) -> dict[str, dict[str, float]]:
     """compares modeled inventory risk and historical cost variability"""
 
@@ -216,6 +248,12 @@ def summarize_almgren_chriss_risk(
 
     calibration = load_training_calibration(calibration_path)
     volatility = calibration["volatility_per_step"]
+
+    liquidity_profile = build_experiment_liquidity_profile(
+        config,
+        calibration,
+        liquidity_aware,
+    )
 
     risk_settings = {
         "AC Risk-Neutral": AC_RISK_NEUTRAL,
@@ -236,6 +274,7 @@ def summarize_almgren_chriss_risk(
             reference_price=OPTIMIZATION_REFERENCE_PRICE,
             volatility_per_step=volatility,
             risk_aversion=risk_aversion,
+            liquidity_profile=liquidity_profile,
         )
 
         expected_cost = calculate_expected_cost_bps(
@@ -243,6 +282,7 @@ def summarize_almgren_chriss_risk(
             config,
             cost_config,
             reference_price=OPTIMIZATION_REFERENCE_PRICE,
+            liquidity_profile=liquidity_profile,
         )
 
         inventory_risk = calculate_inventory_risk_bps_squared(
@@ -251,7 +291,6 @@ def summarize_almgren_chriss_risk(
             volatility,
         )
 
-        # evaluates both schedules under the same risk-aversion setting
         comparison_objective = expected_cost + AC_RISK_SENSITIVE * inventory_risk
 
         summaries[policy_name] = {
@@ -265,17 +304,30 @@ def summarize_almgren_chriss_risk(
 
 
 def main() -> None:
-    results = evaluate_validation_baselines(CHECKPOINT_DIRECTORY)
+    parser = argparse.ArgumentParser(
+        description="Evaluate execution baselines on historical SPY data."
+    )
 
-    save_daily_results(results, OUTPUT_PATH)
+    parser.add_argument(
+        "--liquidity-aware",
+        action="store_true",
+        help="Use the training-calibrated relative liquidity profile.",
+    )
+
+    arguments = parser.parse_args()
+
+    output_path = (
+        LIQUIDITY_AWARE_OUTPUT_PATH if arguments.liquidity_aware else OUTPUT_PATH
+    )
+
+    results = evaluate_validation_baselines(
+        CHECKPOINT_DIRECTORY,
+        liquidity_aware=arguments.liquidity_aware,
+    )
+
+    save_daily_results(results, output_path)
 
     immediate_costs = results["Immediate"]
-    twap_costs = results["TWAP"]
-
-    paired_differences = [
-        twap_costs[trading_date] - immediate_costs[trading_date]
-        for trading_date in immediate_costs
-    ]
 
     print("Historical Validation Evaluation")
     print("---------------------------------")
@@ -283,6 +335,14 @@ def main() -> None:
     print(f"Trading sessions: {len(immediate_costs)}")
 
     print("\nMean implementation shortfall:")
+
+    liquidity_model = (
+        "Training-derived forecast liquidity"
+        if arguments.liquidity_aware
+        else "Constant reference liquidity"
+    )
+
+    print(f"Liquidity model: {liquidity_model}")
 
     for policy_name, daily_costs in results.items():
         average_cost = mean(daily_costs.values())
@@ -313,11 +373,20 @@ def main() -> None:
     risk_summaries = summarize_almgren_chriss_risk(
         results,
         CALIBRATION_PATH,
+        liquidity_aware=arguments.liquidity_aware,
     )
 
     print("\nAlmgren-Chriss Risk Analysis")
     print("---------------------------")
     print(f"Comparison risk aversion: {AC_RISK_SENSITIVE}")
+
+    liquidity_model = (
+        "Training-derived forecast liquidity"
+        if arguments.liquidity_aware
+        else "Constant reference liquidity"
+    )
+
+    print(f"Liquidity model: {liquidity_model}")
 
     for policy_name, summary in risk_summaries.items():
         print(f"\n{policy_name}")
@@ -336,7 +405,7 @@ def main() -> None:
             f"{summary['historical_std_bps']:.4f} bps"
         )
 
-    print(f"\nSaved daily results to: {OUTPUT_PATH}")
+    print(f"\nSaved daily results to: {output_path}")
 
 
 if __name__ == "__main__":
