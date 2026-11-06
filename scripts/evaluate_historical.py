@@ -25,10 +25,24 @@ from execai.policies.almgren_chriss import (
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / "data" / "raw" / "SPY_5min_SIP"
+
 OUTPUT_PATH = PROJECT_ROOT / "results" / "validation" / "2025_baselines.csv"
+
 LIQUIDITY_AWARE_OUTPUT_PATH = (
     PROJECT_ROOT / "results" / "validation" / "2025_baselines_liquidity_aware.csv"
 )
+
+SQUARE_ROOT_OUTPUT_PATH = (
+    PROJECT_ROOT / "results" / "validation" / "2025_baselines_square_root.csv"
+)
+
+SQUARE_ROOT_LIQUIDITY_AWARE_OUTPUT_PATH = (
+    PROJECT_ROOT
+    / "results"
+    / "validation"
+    / "2025_baselines_square_root_liquidity_aware.csv"
+)
+
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
 ORDER_SHARES = 10_000
 TIME_STEPS = 12
@@ -88,7 +102,9 @@ def load_vwap_schedule(
     )
 
 
-def build_evaluation_settings() -> tuple[ExecutionConfig, ExecutionCostConfig]:
+def build_evaluation_settings(
+    impact_model: str = "linear",
+) -> tuple[ExecutionConfig, ExecutionCostConfig]:
     """creates the execution settings shared by historical experiments"""
 
     config = ExecutionConfig(
@@ -101,6 +117,7 @@ def build_evaluation_settings() -> tuple[ExecutionConfig, ExecutionCostConfig]:
         half_spread_bps=HALF_SPREAD_BPS,
         temporary_impact_bps=TEMPORARY_IMPACT_BPS,
         fee_per_share=FEE_PER_SHARE,
+        impact_model=impact_model,
     )
 
     return config, cost_config
@@ -110,6 +127,7 @@ def evaluate_validation_baselines(
     checkpoint_directory: Path,
     calibration_path: Path = CALIBRATION_PATH,
     liquidity_aware: bool = False,
+    impact_model: str = "linear",
 ) -> dict[str, dict[date, float]]:
     """evaluates execution baselines on the validation dataset"""
 
@@ -118,7 +136,7 @@ def evaluate_validation_baselines(
         "validation",
     )
 
-    config, cost_config = build_evaluation_settings()
+    config, cost_config = build_evaluation_settings(impact_model)
 
     calibration = load_training_calibration(calibration_path)
 
@@ -241,10 +259,11 @@ def summarize_almgren_chriss_risk(
     results: dict[str, dict[date, float]],
     calibration_path: Path,
     liquidity_aware: bool = False,
+    impact_model: str = "linear",
 ) -> dict[str, dict[str, float]]:
     """compares modeled inventory risk and historical cost variability"""
 
-    config, cost_config = build_evaluation_settings()
+    config, cost_config = build_evaluation_settings(impact_model)
 
     calibration = load_training_calibration(calibration_path)
     volatility = calibration["volatility_per_step"]
@@ -303,6 +322,27 @@ def summarize_almgren_chriss_risk(
     return summaries
 
 
+def get_experiment_output_path(
+    impact_model: str,
+    liquidity_aware: bool,
+) -> Path:
+    """returns the output file for the selected market assumptions"""
+
+    if impact_model == "linear":
+        if liquidity_aware:
+            return LIQUIDITY_AWARE_OUTPUT_PATH
+
+        return OUTPUT_PATH
+
+    if impact_model == "square_root":
+        if liquidity_aware:
+            return SQUARE_ROOT_LIQUIDITY_AWARE_OUTPUT_PATH
+
+        return SQUARE_ROOT_OUTPUT_PATH
+
+    raise ValueError("Unsupported market impact model.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate execution baselines on historical SPY data."
@@ -314,15 +354,24 @@ def main() -> None:
         help="Use the training-calibrated relative liquidity profile.",
     )
 
+    parser.add_argument(
+        "--impact-model",
+        choices=("linear", "square_root"),
+        default="linear",
+        help="Temporary market-impact model used for evaluation.",
+    )
+
     arguments = parser.parse_args()
 
-    output_path = (
-        LIQUIDITY_AWARE_OUTPUT_PATH if arguments.liquidity_aware else OUTPUT_PATH
+    output_path = get_experiment_output_path(
+        arguments.impact_model,
+        arguments.liquidity_aware,
     )
 
     results = evaluate_validation_baselines(
         CHECKPOINT_DIRECTORY,
         liquidity_aware=arguments.liquidity_aware,
+        impact_model=arguments.impact_model,
     )
 
     save_daily_results(results, output_path)
@@ -374,6 +423,7 @@ def main() -> None:
         results,
         CALIBRATION_PATH,
         liquidity_aware=arguments.liquidity_aware,
+        impact_model=arguments.impact_model,
     )
 
     print("\nAlmgren-Chriss Risk Analysis")
@@ -387,6 +437,7 @@ def main() -> None:
     )
 
     print(f"Liquidity model: {liquidity_model}")
+    print(f"Impact model: {arguments.impact_model}")
 
     for policy_name, summary in risk_summaries.items():
         print(f"\n{policy_name}")

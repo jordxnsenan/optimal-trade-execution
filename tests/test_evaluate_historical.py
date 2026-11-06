@@ -11,6 +11,7 @@ from scripts.evaluate_historical import (
     evaluate_validation_baselines,
     save_daily_results,
     summarize_almgren_chriss_risk,
+    get_experiment_output_path,
 )
 
 from execai.environment.config import ExecutionConfig
@@ -386,6 +387,105 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
         self.assertLessEqual(
             summaries["AC Risk-Sensitive"]["comparison_objective_bps"],
             summaries["AC Risk-Neutral"]["comparison_objective_bps"],
+        )
+
+    def test_impact_models_use_separate_output_files(self):
+        output_paths = {
+            get_experiment_output_path("linear", False),
+            get_experiment_output_path("linear", True),
+            get_experiment_output_path("square_root", False),
+            get_experiment_output_path("square_root", True),
+        }
+
+        self.assertEqual(len(output_paths), 4)
+
+    @patch("scripts.evaluate_historical.load_dataset_split")
+    def test_square_root_model_is_used_in_historical_evaluation(
+        self,
+        mock_load,
+    ):
+        mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": [1.0] * 78,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            linear_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                liquidity_aware=True,
+                impact_model="linear",
+            )
+
+            square_root_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                liquidity_aware=True,
+                impact_model="square_root",
+            )
+
+        trading_date = self.first_date
+
+        # both models agree when the entire order is sold at once
+        self.assertAlmostEqual(
+            linear_results["Immediate"][trading_date],
+            square_root_results["Immediate"][trading_date],
+        )
+
+        # square root impact is greater for smaller trades
+        self.assertGreater(
+            square_root_results["TWAP"][trading_date],
+            linear_results["TWAP"][trading_date],
+        )
+
+        # almgren chriss should optimize using the selected model
+        self.assertLessEqual(
+            square_root_results["AC Risk-Neutral"][trading_date],
+            square_root_results["TWAP"][trading_date] + 1e-9,
+        )
+
+    def test_risk_summary_uses_selected_impact_model(self):
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": [1.0] * 78,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            linear_summary = summarize_almgren_chriss_risk(
+                self.results,
+                calibration_path,
+                impact_model="linear",
+            )
+
+            square_root_summary = summarize_almgren_chriss_risk(
+                self.results,
+                calibration_path,
+                impact_model="square_root",
+            )
+
+        self.assertGreater(
+            square_root_summary["AC Risk-Neutral"]["expected_cost_bps"],
+            linear_summary["AC Risk-Neutral"]["expected_cost_bps"],
         )
 
 
