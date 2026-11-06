@@ -10,6 +10,7 @@ from unittest.mock import patch
 from scripts.evaluate_historical import (
     evaluate_validation_baselines,
     save_daily_results,
+    summarize_almgren_chriss_risk,
 )
 
 
@@ -212,6 +213,49 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
         self.assertAlmostEqual(risk_neutral_cost, 7.8)
         self.assertAlmostEqual(risk_neutral_cost, twap_cost)
         self.assertGreater(risk_sensitive_cost, risk_neutral_cost)
+
+    def test_risk_summary_compares_schedules_under_same_objective(self):
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            summaries = summarize_almgren_chriss_risk(
+                self.results,
+                calibration_path,
+            )
+
+        neutral = summaries["AC Risk-Neutral"]
+        sensitive = summaries["AC Risk-Sensitive"]
+
+        self.assertAlmostEqual(
+            neutral["expected_cost_bps"],
+            7.8,
+        )
+
+        self.assertGreater(
+            sensitive["expected_cost_bps"],
+            neutral["expected_cost_bps"],
+        )
+
+        self.assertLess(
+            sensitive["inventory_risk_bps_squared"],
+            neutral["inventory_risk_bps_squared"],
+        )
+
+        self.assertLessEqual(
+            sensitive["comparison_objective_bps"],
+            neutral["comparison_objective_bps"],
+        )
 
 
 if __name__ == "__main__":

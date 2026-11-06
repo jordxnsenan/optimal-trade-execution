@@ -4,7 +4,7 @@ import json
 from datetime import date
 from functools import partial
 from pathlib import Path
-from statistics import mean
+from statistics import mean, stdev
 
 from execai.data.dataset import load_dataset_split
 from execai.environment.config import ExecutionConfig
@@ -13,8 +13,12 @@ from execai.evaluation.historical import evaluate_historical_sessions
 from execai.policies.baselines import immediate_action, twap_action
 from execai.data.splits import DEFAULT_SPLITS
 from execai.policies.vwap import build_vwap_schedule, vwap_action
-from execai.policies.almgren_chriss import optimize_almgren_chriss_schedule
 from execai.policies.schedules import scheduled_action
+from execai.policies.almgren_chriss import (
+    calculate_expected_cost_bps,
+    calculate_inventory_risk_bps_squared,
+    optimize_almgren_chriss_schedule,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,16 +67,8 @@ def load_vwap_schedule(
     )
 
 
-def evaluate_validation_baselines(
-    checkpoint_directory: Path,
-    calibration_path: Path = CALIBRATION_PATH,
-) -> dict[str, dict[date, float]]:
-    """evaluates execution baselines on the validation dataset"""
-
-    sessions = load_dataset_split(
-        checkpoint_directory,
-        "validation",
-    )
+def build_evaluation_settings() -> tuple[ExecutionConfig, ExecutionCostConfig]:
+    """creates the execution settings shared by historical experiments"""
 
     config = ExecutionConfig(
         total_shares=ORDER_SHARES,
@@ -85,6 +81,22 @@ def evaluate_validation_baselines(
         temporary_impact_bps=TEMPORARY_IMPACT_BPS,
         fee_per_share=FEE_PER_SHARE,
     )
+
+    return config, cost_config
+
+
+def evaluate_validation_baselines(
+    checkpoint_directory: Path,
+    calibration_path: Path = CALIBRATION_PATH,
+) -> dict[str, dict[date, float]]:
+    """evaluates execution baselines on the validation dataset"""
+
+    sessions = load_dataset_split(
+        checkpoint_directory,
+        "validation",
+    )
+
+    config, cost_config = build_evaluation_settings()
 
     calibration = load_training_calibration(calibration_path)
 
@@ -194,6 +206,64 @@ def save_daily_results(
             )
 
 
+def summarize_almgren_chriss_risk(
+    results: dict[str, dict[date, float]],
+    calibration_path: Path,
+) -> dict[str, dict[str, float]]:
+    """compares modeled inventory risk and historical cost variability"""
+
+    config, cost_config = build_evaluation_settings()
+
+    calibration = load_training_calibration(calibration_path)
+    volatility = calibration["volatility_per_step"]
+
+    risk_settings = {
+        "AC Risk-Neutral": AC_RISK_NEUTRAL,
+        "AC Risk-Sensitive": AC_RISK_SENSITIVE,
+    }
+
+    summaries = {}
+
+    for policy_name, risk_aversion in risk_settings.items():
+        daily_costs = list(results[policy_name].values())
+
+        if len(daily_costs) < 2:
+            raise ValueError("At least two historical sessions are required.")
+
+        schedule = optimize_almgren_chriss_schedule(
+            config,
+            cost_config,
+            reference_price=OPTIMIZATION_REFERENCE_PRICE,
+            volatility_per_step=volatility,
+            risk_aversion=risk_aversion,
+        )
+
+        expected_cost = calculate_expected_cost_bps(
+            schedule,
+            config,
+            cost_config,
+            reference_price=OPTIMIZATION_REFERENCE_PRICE,
+        )
+
+        inventory_risk = calculate_inventory_risk_bps_squared(
+            schedule,
+            config,
+            volatility,
+        )
+
+        # evaluates both schedules under the same risk-aversion setting
+        comparison_objective = expected_cost + AC_RISK_SENSITIVE * inventory_risk
+
+        summaries[policy_name] = {
+            "expected_cost_bps": expected_cost,
+            "inventory_risk_bps_squared": inventory_risk,
+            "comparison_objective_bps": comparison_objective,
+            "historical_std_bps": stdev(daily_costs),
+        }
+
+    return summaries
+
+
 def main() -> None:
     results = evaluate_validation_baselines(CHECKPOINT_DIRECTORY)
 
@@ -239,6 +309,32 @@ def main() -> None:
 
     print("\nNegative differences favor the first named policy on cost.")
     print("Risk-sensitive AC also optimizes an inventory-risk penalty.")
+
+    risk_summaries = summarize_almgren_chriss_risk(
+        results,
+        CALIBRATION_PATH,
+    )
+
+    print("\nAlmgren-Chriss Risk Analysis")
+    print("---------------------------")
+    print(f"Comparison risk aversion: {AC_RISK_SENSITIVE}")
+
+    for policy_name, summary in risk_summaries.items():
+        print(f"\n{policy_name}")
+
+        print(f"Expected cost: " f"{summary['expected_cost_bps']:.4f} bps")
+
+        print(f"Inventory risk: " f"{summary['inventory_risk_bps_squared']:.4f} bps^2")
+
+        print(
+            f"Risk-adjusted objective: "
+            f"{summary['comparison_objective_bps']:.4f} bps"
+        )
+
+        print(
+            f"Historical shortfall standard deviation: "
+            f"{summary['historical_std_bps']:.4f} bps"
+        )
 
     print(f"\nSaved daily results to: {OUTPUT_PATH}")
 
