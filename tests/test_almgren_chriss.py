@@ -3,10 +3,10 @@ import unittest
 from itertools import product
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
-from execai.policies.almgren_chriss import calculate_expected_cost_bps
 from execai.policies.almgren_chriss import (
     calculate_expected_cost_bps,
     optimize_almgren_chriss_schedule,
+    calculate_inventory_risk_bps_squared,
 )
 
 
@@ -284,6 +284,102 @@ class AlmgrenChrissTests(unittest.TestCase):
             optimized_objective,
             lowest_reference_objective,
         )
+
+    def test_inventory_risk_matches_manual_calculation(self):
+        schedule = [1, 1, 2]
+        volatility = 0.001
+
+        risk = calculate_inventory_risk_bps_squared(
+            schedule,
+            self.config,
+            volatility,
+        )
+
+        # uses ten basis points of volatility per step. the remaining inventory fractions are 3/4, 2/4, 0
+        expected_risk = 100 * ((3 / 4) ** 2 + (2 / 4) ** 2)
+
+        self.assertAlmostEqual(risk, expected_risk)
+
+    def test_immediate_execution_has_no_inventory_risk(self):
+        risk = calculate_inventory_risk_bps_squared(
+            [4, 0, 0],
+            self.config,
+            volatility_per_step=0.001,
+        )
+
+        self.assertEqual(risk, 0.0)
+
+    def test_delaying_execution_increases_inventory_risk(self):
+        early_schedule = [2, 1, 1]
+        delayed_schedule = [0, 0, 4]
+
+        early_risk = calculate_inventory_risk_bps_squared(
+            early_schedule,
+            self.config,
+            volatility_per_step=0.001,
+        )
+
+        delayed_risk = calculate_inventory_risk_bps_squared(
+            delayed_schedule,
+            self.config,
+            volatility_per_step=0.001,
+        )
+
+        self.assertGreater(delayed_risk, early_risk)
+
+    def test_risk_sensitive_optimizer_reduces_inventory_risk(self):
+        config = ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+
+        volatility = 0.000721
+
+        neutral_schedule = optimize_almgren_chriss_schedule(
+            config,
+            self.cost_config,
+            reference_price=100.0,
+            volatility_per_step=volatility,
+            risk_aversion=0.0,
+        )
+
+        sensitive_schedule = optimize_almgren_chriss_schedule(
+            config,
+            self.cost_config,
+            reference_price=100.0,
+            volatility_per_step=volatility,
+            risk_aversion=0.05,
+        )
+
+        neutral_risk = calculate_inventory_risk_bps_squared(
+            neutral_schedule,
+            config,
+            volatility,
+        )
+
+        sensitive_risk = calculate_inventory_risk_bps_squared(
+            sensitive_schedule,
+            config,
+            volatility,
+        )
+
+        self.assertLess(sensitive_risk, neutral_risk)
+
+    def test_inventory_risk_rejects_invalid_inputs(self):
+        with self.assertRaises(ValueError):
+            calculate_inventory_risk_bps_squared(
+                [1, 1, 1],
+                self.config,
+                volatility_per_step=0.001,
+            )
+
+        with self.assertRaises(ValueError):
+            calculate_inventory_risk_bps_squared(
+                [2, 1, 1],
+                self.config,
+                volatility_per_step=-0.001,
+            )
 
 
 if __name__ == "__main__":

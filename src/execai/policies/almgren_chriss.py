@@ -10,6 +10,22 @@ from execai.environment.costs import (
 COST_COMPARISON_TOLERANCE = 1e-9
 
 
+def _validate_schedule(
+    schedule: list[int],
+    config: ExecutionConfig,
+) -> None:
+    """checks that a schedule executes the complete order"""
+
+    if len(schedule) != config.num_time_steps:
+        raise ValueError("Schedule length must match the number of time steps.")
+
+    if any(type(lots) is not int or lots < 0 for lots in schedule):
+        raise ValueError("Schedule must contain non-negative integer lots.")
+
+    if sum(schedule) != config.num_lots:
+        raise ValueError("Schedule must execute the entire order.")
+
+
 def calculate_expected_cost_bps(
     schedule: list[int],
     config: ExecutionConfig,
@@ -21,14 +37,7 @@ def calculate_expected_cost_bps(
     if not math.isfinite(reference_price) or reference_price <= 0:
         raise ValueError("Reference price must be positive and finite.")
 
-    if len(schedule) != config.num_time_steps:
-        raise ValueError("Schedule length must match the number of time steps.")
-
-    if any(type(lots) is not int or lots < 0 for lots in schedule):
-        raise ValueError("Schedule must contain non-negative integer lots.")
-
-    if sum(schedule) != config.num_lots:
-        raise ValueError("Schedule must execute the entire order.")
+    _validate_schedule(schedule, config)
 
     total_net_proceeds = 0.0
 
@@ -153,3 +162,30 @@ def optimize_almgren_chriss_schedule(
         remaining_lots -= lots_to_sell
 
     return schedule
+
+
+def calculate_inventory_risk_bps_squared(
+    schedule: list[int],
+    config: ExecutionConfig,
+    volatility_per_step: float,
+) -> float:
+    """estimates price-risk variance from inventory held between decisions"""
+
+    _validate_schedule(schedule, config)
+
+    if not math.isfinite(volatility_per_step) or volatility_per_step < 0:
+        raise ValueError("Volatility must be non-negative and finite.")
+
+    volatility_bps_squared = (volatility_per_step * BASIS_POINTS_MULTIPLIER) ** 2
+
+    remaining_lots = config.num_lots
+    total_risk = 0.0
+
+    for lots_to_sell in schedule:
+        remaining_lots -= lots_to_sell
+
+        remaining_fraction = remaining_lots / config.num_lots
+
+        total_risk += volatility_bps_squared * remaining_fraction**2
+
+    return total_risk
