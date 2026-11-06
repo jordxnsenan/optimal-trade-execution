@@ -488,6 +488,77 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             linear_summary["AC Risk-Neutral"]["expected_cost_bps"],
         )
 
+    def test_different_impact_strengths_use_separate_files(self):
+        default_path = get_experiment_output_path(
+            "linear",
+            True,
+        )
+
+        low_impact_path = get_experiment_output_path(
+            "linear",
+            True,
+            10.0,
+        )
+
+        high_impact_path = get_experiment_output_path(
+            "linear",
+            True,
+            40.0,
+        )
+
+        self.assertEqual(
+            len({default_path, low_impact_path, high_impact_path}),
+            3,
+        )
+
+    @patch("scripts.evaluate_historical.load_dataset_split")
+    def test_impact_strength_changes_execution_costs(self, mock_load):
+        mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": [1.0] * 78,
+        }
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            low_impact_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                impact_strength_bps=10.0,
+            )
+
+            high_impact_results = evaluate_validation_baselines(
+                Path(directory),
+                calibration_path,
+                impact_strength_bps=40.0,
+            )
+
+        trading_date = self.first_date
+
+        self.assertAlmostEqual(
+            low_impact_results["Immediate"][trading_date],
+            16.0,
+        )
+
+        self.assertAlmostEqual(
+            high_impact_results["Immediate"][trading_date],
+            46.0,
+        )
+
+        self.assertLess(
+            low_impact_results["TWAP"][trading_date],
+            high_impact_results["TWAP"][trading_date],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
