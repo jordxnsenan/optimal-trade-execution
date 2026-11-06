@@ -62,3 +62,20 @@ and is excluded from Git.
 
 The 2023–2024 training period will be used to estimate market characteristics and train the reinforcement learning agents. The 2025 validation period will support model development and hyperparameter selection. The January–September 2026 period is reserved for final testing. Model performance on this period will not be examined until the
 experimental configuration has been finalized. Historical prices and volumes will be used to inform market simulation and replay. Transaction costs and the effect of our hypothetical trades will continue to be modeled separately.
+
+## Historical Market Calibration
+
+The initial market calibration uses the 2023–2024 training dataset where all parameters were calculated before examining the validation or held-out test periods. The estimated standard deviation of five-minute intraday log
+returns was 0.000721.
+
+I also calculated an average intraday volume profile using 497 regular trading sessions. Five shortened sessions were excluded because their shorter trading windows would distort the normal full-day volume distribution.
+
+The resulting profile contains 78 volume fractions that sum to one. The first five-minute interval accounts for approximately 3.03% of average daily volume, while the final interval accounts for approximately 8.91%. The calibration parameters are saved in `configs/spy_training_calibration.json`.
+
+These estimates will be used to configure synthetic market experiments and provide historical volume forecasts for execution strategies. They describe market behaviour observed during the training period and do not directly measure the market impact of hypothetical trades.
+
+The calibration can be reproduced using:
+
+```bash
+python scripts/calibrate_market.py
+```

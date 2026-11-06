@@ -1,10 +1,12 @@
+import pandas_market_calendars as market_calendars
+
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+
 from execai.data.alpaca import fetch_spy_bars
 from execai.data.session_validation import validate_trading_session
-
-import pandas_market_calendars as market_calendars
 
 
 @dataclass
@@ -16,13 +18,23 @@ class SessionDownloadReport:
     rejected_sessions: dict[date, str]
 
 
-def download_spy_sessions_with_report(
+@dataclass
+class TradingSessionResult:
+    """stores the result of downloading one trading session"""
+
+    trading_date: date
+    bars: list[dict]
+    validation_error: str | None = None
+
+
+def iter_spy_sessions(
     start_date: date,
     end_date: date,
     api_key: str,
     secret_key: str,
-) -> SessionDownloadReport:
-    """downloads trading sessions and records any validation failures"""
+    skip_dates: set[date] | None = None,
+) -> Iterator[TradingSessionResult]:
+    """downlaods and validates one trading session at a time"""
 
     if start_date > end_date:
         raise ValueError("Start date must not be after end date.")
@@ -40,14 +52,11 @@ def download_spy_sessions_with_report(
     if schedule.empty:
         raise ValueError("No trading sessions found in the requested date range.")
 
-    report = SessionDownloadReport(
-        bars=[],
-        completed_sessions=[],
-        rejected_sessions={},
-    )
-
     for trading_day, market_hours in schedule.iterrows():
         trading_date = trading_day.date()
+
+        if skip_dates is not None and trading_date in skip_dates:
+            continue
 
         session_start = market_hours["market_open"].to_pydatetime()
         session_end = market_hours["market_close"].to_pydatetime() - timedelta(
@@ -64,11 +73,45 @@ def download_spy_sessions_with_report(
         try:
             validate_trading_session(bars, trading_date)
         except ValueError as error:
-            report.rejected_sessions[trading_date] = str(error)
+            yield TradingSessionResult(
+                trading_date=trading_date,
+                bars=[],
+                validation_error=str(error),
+            )
             continue
 
-        report.bars.extend(bars)
-        report.completed_sessions.append(trading_date)
+        yield TradingSessionResult(
+            trading_date=trading_date,
+            bars=bars,
+        )
+
+
+def download_spy_sessions_with_report(
+    start_date: date,
+    end_date: date,
+    api_key: str,
+    secret_key: str,
+) -> SessionDownloadReport:
+    """downloads sessions and collects their validation results"""
+
+    report = SessionDownloadReport(
+        bars=[],
+        completed_sessions=[],
+        rejected_sessions={},
+    )
+
+    for result in iter_spy_sessions(
+        start_date,
+        end_date,
+        api_key,
+        secret_key,
+    ):
+        if result.validation_error is not None:
+            report.rejected_sessions[result.trading_date] = result.validation_error
+            continue
+
+        report.bars.extend(result.bars)
+        report.completed_sessions.append(result.trading_date)
 
     return report
 
@@ -79,7 +122,7 @@ def download_spy_sessions(
     api_key: str,
     secret_key: str,
 ) -> list[dict]:
-    """downloads and validates SPY bars for a range of trading days"""
+    """downloads and validates SPY bars for valid trading days"""
 
     report = download_spy_sessions_with_report(
         start_date,
