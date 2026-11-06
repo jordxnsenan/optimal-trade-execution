@@ -381,6 +381,79 @@ class AlmgrenChrissTests(unittest.TestCase):
                 volatility_per_step=-0.001,
             )
 
+    def test_liquidity_aware_optimizer_prefers_high_liquidity(self):
+        liquidity_profile = [3.0, 1.0, 0.3]
+
+        schedule = optimize_almgren_chriss_schedule(
+            self.config,
+            self.cost_config,
+            reference_price=100.0,
+            volatility_per_step=0.000721,
+            risk_aversion=0.0,
+            liquidity_profile=liquidity_profile,
+        )
+
+        self.assertEqual(schedule, [3, 1, 0])
+
+        expected_cost = calculate_expected_cost_bps(
+            schedule,
+            self.config,
+            self.cost_config,
+            reference_price=100.0,
+            liquidity_profile=liquidity_profile,
+        )
+
+        self.assertAlmostEqual(expected_cost, 11.0)
+
+        evenly_distributed_cost = calculate_expected_cost_bps(
+            [2, 1, 1],
+            self.config,
+            self.cost_config,
+            reference_price=100.0,
+            liquidity_profile=liquidity_profile,
+        )
+
+        self.assertLess(expected_cost, evenly_distributed_cost)
+
+    def test_reference_liquidity_preserves_existing_costs(self):
+        schedule = [2, 1, 1]
+
+        original_cost = calculate_expected_cost_bps(
+            schedule,
+            self.config,
+            self.cost_config,
+            reference_price=100.0,
+        )
+
+        reference_liquidity_cost = calculate_expected_cost_bps(
+            schedule,
+            self.config,
+            self.cost_config,
+            reference_price=100.0,
+            liquidity_profile=[1.0, 1.0, 1.0],
+        )
+
+        self.assertAlmostEqual(original_cost, reference_liquidity_cost)
+
+    def test_optimizer_rejects_invalid_liquidity_profiles(self):
+        invalid_profiles = [
+            [1.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, float("nan"), 1.0],
+            [True, 1.0, 1.0],
+        ]
+
+        for profile in invalid_profiles:
+            with self.subTest(profile=profile):
+                with self.assertRaises(ValueError):
+                    optimize_almgren_chriss_schedule(
+                        self.config,
+                        self.cost_config,
+                        reference_price=100.0,
+                        volatility_per_step=0.000721,
+                        liquidity_profile=profile,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
