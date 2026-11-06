@@ -10,6 +10,7 @@ def evaluate_policies(
     cost_config: ExecutionCostConfig,
     price_paths: list[list[float]],
     policies: dict[str, Callable[[dict], int]],
+    liquidity_profile: list[float] | None = None,
 ) -> dict[str, list[float]]:
     """evaluates each policy on the same market scenarios"""
 
@@ -19,14 +20,15 @@ def evaluate_policies(
     if not policies:
         raise ValueError("At least one policy is required.")
 
-    execution_costs = {
-        policy_name: []
-        for policy_name in policies
-    }
+    execution_costs = {policy_name: [] for policy_name in policies}
 
     for prices in price_paths:
         for policy_name, choose_action in policies.items():
-            environment = ExecutionEnvironment(config, cost_config)
+            environment = ExecutionEnvironment(
+                config,
+                cost_config,
+                liquidity_profile=liquidity_profile,
+            )
 
             cost = run_policy(
                 environment,

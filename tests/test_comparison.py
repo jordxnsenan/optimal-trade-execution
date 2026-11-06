@@ -52,10 +52,7 @@ class PolicyComparisonTests(unittest.TestCase):
         self.assertLess(results["TWAP"][1], results["TWAP"][0])
 
     def test_evaluation_does_not_modify_price_paths(self):
-        original_paths = [
-            prices.copy()
-            for prices in self.price_paths
-        ]
+        original_paths = [prices.copy() for prices in self.price_paths]
 
         evaluate_policies(
             self.config,
@@ -84,6 +81,24 @@ class PolicyComparisonTests(unittest.TestCase):
                 {},
             )
 
+    def test_evaluation_uses_relative_liquidity(self):
+        results = evaluate_policies(
+            self.config,
+            self.cost_config,
+            [self.price_paths[0]],
+            self.policies,
+            liquidity_profile=[2.0, 1.0, 1.0],
+        )
+
+        self.assertAlmostEqual(
+            results["Immediate"][0],
+            16.0,
+        )
+
+        self.assertAlmostEqual(
+            results["TWAP"][0],
+            11.0,
+        )
 
 if __name__ == "__main__":
     unittest.main()

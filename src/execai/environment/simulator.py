@@ -17,11 +17,31 @@ class ExecutionEnvironment:
         self,
         config: ExecutionConfig,
         cost_config: ExecutionCostConfig | None = None,
+        liquidity_profile: list[float] | None = None,
     ):
         self.config = config
         self.cost_config = (
             cost_config if cost_config is not None else ExecutionCostConfig()
         )
+
+        if liquidity_profile is None:
+            liquidity_profile = [1.0] * config.num_time_steps
+
+        if len(liquidity_profile) != config.num_time_steps:
+            raise ValueError(
+                "Liquidity profile length must match the number of time steps."
+            )
+
+        if any(
+            isinstance(liquidity, bool)
+            or not isinstance(liquidity, (int, float))
+            or not math.isfinite(liquidity)
+            or liquidity <= 0
+            for liquidity in liquidity_profile
+        ):
+            raise ValueError("Relative liquidity must be positive and finite.")
+
+        self._liquidity_profile = tuple(liquidity_profile)
         self.inventory = Inventory(config)
 
         self._prices = []
@@ -29,7 +49,7 @@ class ExecutionEnvironment:
         self.total_proceeds = 0.0
         self.total_fees = 0.0
         self.is_done = True
-        
+
         self._execution_history: list[ExecutionRecord] = []
 
     def reset(self, prices: list[float]) -> dict:
@@ -62,31 +82,38 @@ class ExecutionEnvironment:
         }
 
     def step(self, num_lots: int) -> tuple[dict | None, float, bool]:
-        """executes a sell trade and advances the episode"""
+        """executes a sell trade and advance the episode"""
 
         if self.is_done:
             raise RuntimeError("Reset the environment before taking another step.")
 
-        shares_sold = self.inventory.execute_sell(num_lots)
+        requested_shares = self.inventory.preview_sell(num_lots)
+
+        is_final_step = self.current_step == self.config.num_time_steps - 1
+
         forced_shares = 0
-        
-        is_final_step = self.current_step == (self.config.num_time_steps - 1)
-        
-        if is_final_step and self.inventory.remaining_lots > 0:
-            forced_shares = self.inventory.execute_sell(
-                self.inventory.remaining_lots
-            )
-            
-            shares_sold += forced_shares
+
+        if is_final_step:
+            forced_shares = self.inventory.remaining_shares - requested_shares
+
+        shares_sold = requested_shares + forced_shares
 
         market_price = self._prices[self.current_step]
+        relative_liquidity = self._liquidity_profile[self.current_step]
 
         execution = calculate_sell_execution(
             market_price,
             shares_sold,
             self.config.total_shares,
             self.cost_config,
+            relative_liquidity=relative_liquidity,
         )
+
+        # ensure inventory only updates after execution costs have been validated
+        self.inventory.execute_sell(num_lots)
+
+        if forced_shares > 0:
+            self.inventory.execute_sell(self.inventory.remaining_lots)
 
         self.total_proceeds += execution.net_proceeds
         self.total_fees += execution.fees
@@ -94,17 +121,10 @@ class ExecutionEnvironment:
         arrival_price = self._prices[0]
         arrival_notional = self.config.total_shares * arrival_price
 
-        shortfall_dollars = (
-            shares_sold * arrival_price - execution.net_proceeds
-        )
+        shortfall_dollars = shares_sold * arrival_price - execution.net_proceeds
 
-        reward = (
-            -shortfall_dollars
-            / arrival_notional
-            * BASIS_POINTS_MULTIPLIER
-        )
-        
-        
+        reward = -shortfall_dollars / arrival_notional * BASIS_POINTS_MULTIPLIER
+
         execution_record = ExecutionRecord(
             time_step=self.current_step,
             requested_lots=num_lots,
@@ -141,14 +161,10 @@ class ExecutionEnvironment:
         arrival_notional = self.config.total_shares * self._prices[0]
         shortfall_dollars = arrival_notional - self.total_proceeds
 
-        return (
-            shortfall_dollars
-            / arrival_notional
-            * BASIS_POINTS_MULTIPLIER
-        )
-        
+        return shortfall_dollars / arrival_notional * BASIS_POINTS_MULTIPLIER
+
     @property
     def execution_history(self) -> tuple[ExecutionRecord, ...]:
         """returns the execution records for the current episode"""
-        
-        return tuple(self._execution_history)   
+
+        return tuple(self._execution_history)

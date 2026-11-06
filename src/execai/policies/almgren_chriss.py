@@ -26,11 +26,38 @@ def _validate_schedule(
         raise ValueError("Schedule must execute the entire order.")
 
 
+def _get_liquidity_profile(
+    config: ExecutionConfig,
+    liquidity_profile: list[float] | None,
+) -> tuple[float, ...]:
+    """validates the liquidity profile or use reference liquidity"""
+
+    if liquidity_profile is None:
+        return (1.0,) * config.num_time_steps
+
+    if len(liquidity_profile) != config.num_time_steps:
+        raise ValueError(
+            "Liquidity profile length must match the number of time steps."
+        )
+
+    if any(
+        isinstance(liquidity, bool)
+        or not isinstance(liquidity, (int, float))
+        or not math.isfinite(liquidity)
+        or liquidity <= 0
+        for liquidity in liquidity_profile
+    ):
+        raise ValueError("Relative liquidity must be positive and finite.")
+
+    return tuple(float(liquidity) for liquidity in liquidity_profile)
+
+
 def calculate_expected_cost_bps(
     schedule: list[int],
     config: ExecutionConfig,
     cost_config: ExecutionCostConfig,
     reference_price: float,
+    liquidity_profile: list[float] | None = None,
 ) -> float:
     """calculates expected execution cost for a fixed trade schedule"""
 
@@ -39,9 +66,14 @@ def calculate_expected_cost_bps(
 
     _validate_schedule(schedule, config)
 
+    liquidity_values = _get_liquidity_profile(
+        config,
+        liquidity_profile,
+    )
+
     total_net_proceeds = 0.0
 
-    for lots_to_sell in schedule:
+    for time_step, lots_to_sell in enumerate(schedule):
         shares_sold = lots_to_sell * config.shares_per_lot
 
         execution = calculate_sell_execution(
@@ -49,6 +81,7 @@ def calculate_expected_cost_bps(
             shares_sold,
             config.total_shares,
             cost_config,
+            relative_liquidity=liquidity_values[time_step],
         )
 
         total_net_proceeds += execution.net_proceeds
@@ -65,6 +98,7 @@ def optimize_almgren_chriss_schedule(
     reference_price: float,
     volatility_per_step: float,
     risk_aversion: float = 0.0,
+    liquidity_profile: list[float] | None = None,
 ) -> list[int]:
     """finds the lowest-cost execution schedule with optional inventory risk"""
 
@@ -76,6 +110,11 @@ def optimize_almgren_chriss_schedule(
 
     if not math.isfinite(risk_aversion) or risk_aversion < 0:
         raise ValueError("Risk aversion must be non-negative and finite.")
+
+    liquidity_values = _get_liquidity_profile(
+        config,
+        liquidity_profile,
+    )
 
     num_steps = config.num_time_steps
     num_lots = config.num_lots
@@ -112,6 +151,7 @@ def optimize_almgren_chriss_schedule(
                     shares_sold,
                     config.total_shares,
                     cost_config,
+                    relative_liquidity=liquidity_values[time_step],
                 )
 
                 execution_cost_bps = (

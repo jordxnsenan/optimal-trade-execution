@@ -127,6 +127,24 @@ class HistoricalEvaluationTests(unittest.TestCase):
                 {},
             )
 
+    def test_historical_evaluation_uses_relative_liquidity(self):
+        sessions = {
+            self.first_date: self.make_bars(),
+        }
+
+        results = evaluate_historical_sessions(
+            sessions,
+            self.config,
+            self.cost_config,
+            {"Immediate": immediate_action},
+            liquidity_profile=[2.0] + [1.0] * 11,
+        )
+
+        self.assertAlmostEqual(
+            results["Immediate"][self.first_date],
+            16.0,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

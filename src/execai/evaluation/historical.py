@@ -12,6 +12,7 @@ def evaluate_historical_sessions(
     config: ExecutionConfig,
     cost_config: ExecutionCostConfig,
     policies: dict[str, Callable[[dict], int]],
+    liquidity_profile: list[float] | None = None,
 ) -> dict[str, dict[date, float]]:
     """evaluates policies across trading sessions"""
 
@@ -37,6 +38,7 @@ def evaluate_historical_sessions(
         cost_config,
         price_paths,
         policies,
+        liquidity_profile=liquidity_profile,
     )
 
     results = {}
