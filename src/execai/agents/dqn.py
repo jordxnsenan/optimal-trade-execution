@@ -1,7 +1,8 @@
+import random
 import torch
 
 from torch import nn
-from execai.agents.q_learning import get_state
+from execai.agents.q_learning import get_state, get_valid_actions
 from execai.environment.config import ExecutionConfig
 
 STATE_FEATURE_COUNT = 2
@@ -63,3 +64,52 @@ class QNetwork(nn.Module):
         """predicts Q-values for the supplied states"""
 
         return self.network(states)
+
+
+class DQNAgent:
+    """selects execution actions using neural network Q-values"""
+
+    def __init__(
+        self,
+        config: ExecutionConfig,
+        network: QNetwork | None = None,
+        seed: int | None = None,
+    ):
+        self.config = config
+
+        self.network = (
+            network if network is not None else QNetwork(num_lots=config.num_lots)
+        )
+
+        self.random_generator = random.Random(seed)
+
+    def select_action(
+        self,
+        observation: dict,
+        exploration_rate: float = 0.0,
+    ) -> int:
+        """chooses a valid action using epsilon-greedy exploration"""
+
+        if (
+            isinstance(exploration_rate, bool)
+            or not isinstance(exploration_rate, (int, float))
+            or not 0 <= exploration_rate <= 1
+        ):
+            raise ValueError("Exploration rate must be between 0 and 1.")
+
+        valid_actions = get_valid_actions(observation, self.config)
+
+        # explores by choosing a random valid trade
+        if exploration_rate > 0 and self.random_generator.random() < exploration_rate:
+            return self.random_generator.choice(valid_actions)
+
+        # otherwise selects the highest-valued valid action
+        state = encode_observation(observation, self.config)
+
+        with torch.no_grad():
+            q_values = self.network(state)
+
+        return max(
+            valid_actions,
+            key=lambda action: q_values[action].item(),
+        )
