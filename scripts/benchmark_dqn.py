@@ -21,7 +21,6 @@ TARGET_SYNC_INTERVAL = 100
 RECENT_EPISODES = 100
 
 BENCHMARK_PRICE = 100.0
-KNOWN_OPTIMAL_COST_BPS = 13.5
 
 
 def run_execution_episode(environment, prices, policy):
@@ -37,6 +36,23 @@ def run_execution_episode(environment, prices, policy):
         observation, _, _ = environment.step(action)
 
     return actions, environment.implementation_shortfall_bps
+
+
+def build_benchmark_config(full_size: bool = False) -> ExecutionConfig:
+    """builds the selected deterministic execution benchmark"""
+
+    if full_size:
+        return ExecutionConfig(
+            total_shares=10_000,
+            num_time_steps=12,
+            num_lots=20,
+        )
+
+    return ExecutionConfig(
+        total_shares=400,
+        num_time_steps=3,
+        num_lots=4,
+    )
 
 
 def main():
@@ -56,6 +72,12 @@ def main():
         default=DEFAULT_SEED,
     )
 
+    parser.add_argument(
+        "--full-size",
+        action="store_true",
+        help="Train on the 10,000-share execution problem.",
+    )
+
     arguments = parser.parse_args()
 
     if arguments.episodes <= 0:
@@ -64,11 +86,7 @@ def main():
     torch.set_num_threads(1)
     torch.manual_seed(arguments.seed)
 
-    config = ExecutionConfig(
-        total_shares=400,
-        num_time_steps=3,
-        num_lots=4,
-    )
+    config = build_benchmark_config(arguments.full_size)
 
     cost_config = ExecutionCostConfig(
         half_spread_bps=5.0,
@@ -111,6 +129,13 @@ def main():
 
     print("DQN Deterministic Benchmark")
     print("---------------------------")
+
+    print(
+        f"Execution problem: {config.total_shares} shares, "
+        f"{config.num_lots} lots, "
+        f"{config.num_time_steps} steps"
+    )
+
     print(f"Training episodes: {arguments.episodes}")
     print(f"Random seed: {arguments.seed}")
     print(f"Gradient updates: {trainer.update_count}")
@@ -137,6 +162,7 @@ def main():
     print("\nEvaluation without exploration:")
 
     evaluation_environment = ExecutionEnvironment(config, cost_config)
+    evaluation_costs = {}
 
     for policy_name, policy in policies.items():
         schedule, cost = run_execution_episode(
@@ -145,10 +171,14 @@ def main():
             policy,
         )
 
+        evaluation_costs[policy_name] = cost
+
         print(f"{policy_name}: {cost:.4f} bps " f"| Actions: {schedule}")
 
-        if policy_name == "DQN Greedy":
-            print(f"Gap to known optimum: " f"{cost - KNOWN_OPTIMAL_COST_BPS:+.4f} bps")
+    print(
+        f"Gap to TWAP: "
+        f"{evaluation_costs['DQN Greedy'] - evaluation_costs['TWAP']:+.4f} bps"
+    )
 
 
 if __name__ == "__main__":

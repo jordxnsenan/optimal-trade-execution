@@ -4,7 +4,10 @@ import torch
 from functools import partial
 from unittest.mock import patch
 
-from scripts.benchmark_dqn import run_execution_episode
+from scripts.benchmark_dqn import (
+    build_benchmark_config,
+    run_execution_episode,
+)
 from execai.agents.dqn import DQNAgent
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
@@ -77,6 +80,42 @@ class DQNBenchmarkTests(unittest.TestCase):
                 recorded_call.kwargs["exploration_rate"],
                 0.0,
             )
+
+    def test_default_benchmark_remains_small(self):
+        config = build_benchmark_config()
+
+        self.assertEqual(config.total_shares, 400)
+        self.assertEqual(config.num_time_steps, 3)
+        self.assertEqual(config.num_lots, 4)
+
+    def test_full_size_benchmark_baseline_costs(self):
+        config = build_benchmark_config(full_size=True)
+
+        environment = ExecutionEnvironment(
+            config,
+            self.cost_config,
+        )
+
+        prices = [100.0] * config.num_time_steps
+
+        _, immediate_cost = run_execution_episode(
+            environment,
+            prices,
+            immediate_action,
+        )
+
+        twap_actions, twap_cost = run_execution_episode(
+            environment,
+            prices,
+            partial(twap_action, config=config),
+        )
+
+        self.assertEqual(config.total_shares, 10_000)
+        self.assertEqual(len(twap_actions), 12)
+        self.assertEqual(sum(twap_actions), 20)
+
+        self.assertAlmostEqual(immediate_cost, 26.0)
+        self.assertAlmostEqual(twap_cost, 7.8)
 
 
 if __name__ == "__main__":
