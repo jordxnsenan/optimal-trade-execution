@@ -228,6 +228,72 @@ class DQNEpisodeTrainingTests(unittest.TestCase):
                 [[100.0, 100.0, 100.0]],
             )
 
+    def test_training_uses_episode_liquidity_profiles(self):
+        config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=1,
+            num_lots=4,
+        )
+
+        agent = DQNAgent(
+            config,
+            seed=42,
+            use_liquidity=True,
+        )
+
+        replay_buffer = ReplayBuffer(capacity=10, seed=42)
+
+        trainer = DQNTrainer(
+            agent,
+            replay_buffer,
+            batch_size=1,
+        )
+
+        environment = ExecutionEnvironment(
+            config,
+            self.cost_config,
+        )
+
+        episode_costs = train_dqn(
+            agent,
+            trainer,
+            environment,
+            price_paths=[
+                [100.0],
+                [100.0],
+            ],
+            liquidity_profiles=[
+                [0.5],
+                [2.0],
+            ],
+        )
+
+        # lower liquidity increases modeled execution costs
+        self.assertAlmostEqual(episode_costs[0], 46.0)
+        self.assertAlmostEqual(episode_costs[1], 16.0)
+
+        observed_liquidity = [
+            transition.observation["relative_liquidity"]
+            for transition in replay_buffer.transitions
+        ]
+
+        self.assertEqual(observed_liquidity, [0.5, 2.0])
+
+    def test_rejects_unmatched_liquidity_profiles(self):
+        with self.assertRaisesRegex(ValueError, "matching liquidity"):
+            train_dqn(
+                self.agent,
+                self.trainer,
+                self.environment,
+                price_paths=[
+                    [100.0, 100.0, 100.0],
+                    [100.0, 100.0, 100.0],
+                ],
+                liquidity_profiles=[
+                    [1.0, 1.0, 1.0],
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

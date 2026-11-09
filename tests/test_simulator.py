@@ -430,5 +430,73 @@ class LiquidityObservationTests(unittest.TestCase):
         )
 
 
+class EpisodeLiquidityTests(unittest.TestCase):
+
+    def setUp(self):
+        self.config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=3,
+            num_lots=4,
+        )
+
+        self.prices = [100.0, 100.0, 100.0]
+
+    def test_reset_accepts_different_liquidity_profiles(self):
+        environment = ExecutionEnvironment(self.config)
+
+        first_observation = environment.reset(
+            self.prices,
+            liquidity_profile=[0.5, 1.0, 1.5],
+        )
+
+        second_observation = environment.reset(
+            self.prices,
+            liquidity_profile=[2.0, 1.0, 0.5],
+        )
+
+        self.assertEqual(
+            first_observation["relative_liquidity"],
+            0.5,
+        )
+
+        self.assertEqual(
+            second_observation["relative_liquidity"],
+            2.0,
+        )
+
+    def test_reset_restores_default_liquidity(self):
+        environment = ExecutionEnvironment(
+            self.config,
+            liquidity_profile=[1.5, 1.0, 0.5],
+        )
+
+        environment.reset(
+            self.prices,
+            liquidity_profile=[0.5, 0.5, 0.5],
+        )
+
+        observation = environment.reset(self.prices)
+
+        self.assertEqual(
+            observation["relative_liquidity"],
+            1.5,
+        )
+
+    def test_reset_rejects_invalid_liquidity(self):
+        environment = ExecutionEnvironment(self.config)
+
+        with self.assertRaises(ValueError):
+            environment.reset(
+                self.prices,
+                liquidity_profile=[0.0, 1.0, 1.0],
+            )
+
+        with self.assertRaises(ValueError):
+            environment.reset(
+                self.prices,
+                liquidity_profile=[1.0, 1.0],
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

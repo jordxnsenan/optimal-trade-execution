@@ -12,11 +12,17 @@ def train_dqn(
     price_paths: list[list[float]],
     initial_exploration_rate: float = 1.0,
     final_exploration_rate: float = 0.1,
+    liquidity_profiles: list[list[float]] | None = None,
 ) -> list[float]:
     """trains DQN through complete execution episodes"""
 
     if not price_paths:
         raise ValueError("At least one price path is required.")
+
+    if liquidity_profiles is not None and len(liquidity_profiles) != len(price_paths):
+        raise ValueError(
+            "Each training price path must have a matching liquidity profile."
+        )
 
     if agent.config != environment.config:
         raise ValueError("Agent and environment configurations must match.")
@@ -56,7 +62,15 @@ def train_dqn(
                 * training_progress
             )
 
-        observation = environment.reset(prices)
+        episode_liquidity = None
+
+        if liquidity_profiles is not None:
+            episode_liquidity = liquidity_profiles[episode_index]
+
+        observation = environment.reset(
+            prices,
+            liquidity_profile=episode_liquidity,
+        )
 
         while observation is not None:
             action = agent.select_action(
