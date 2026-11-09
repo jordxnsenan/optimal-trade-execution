@@ -1,4 +1,5 @@
 import unittest
+import math
 import torch
 
 from unittest.mock import patch
@@ -240,6 +241,75 @@ class DQNTrainingTests(unittest.TestCase):
                         self.replay_buffer,
                         **parameters,
                     )
+
+    def test_liquidity_aware_training_step(self):
+        agent = DQNAgent(
+            self.config,
+            seed=42,
+            use_liquidity=True,
+        )
+
+        replay_buffer = ReplayBuffer(capacity=10, seed=42)
+
+        replay_buffer.add(
+            observation={
+                "time_step": 0,
+                "remaining_lots": 4,
+                "relative_liquidity": 0.5,
+            },
+            action=1,
+            reward=-2.0,
+            next_observation={
+                "time_step": 1,
+                "remaining_lots": 3,
+                "relative_liquidity": 1.5,
+            },
+            done=False,
+        )
+
+        trainer = DQNTrainer(
+            agent,
+            replay_buffer,
+            batch_size=1,
+        )
+
+        loss = trainer.train_step()
+
+        self.assertIsNotNone(loss)
+        self.assertTrue(math.isfinite(loss))
+        self.assertEqual(trainer.update_count, 1)
+
+    def test_liquidity_aware_targets_use_three_features(self):
+        transition = Transition(
+            observation={
+                "time_step": 0,
+                "remaining_lots": 2,
+                "relative_liquidity": 0.5,
+            },
+            action=0,
+            reward=-2.0,
+            next_observation={
+                "time_step": 1,
+                "remaining_lots": 2,
+                "relative_liquidity": 1.5,
+            },
+            done=False,
+        )
+
+        target_network = QNetwork(
+            self.config.num_lots,
+            use_liquidity=True,
+        )
+
+        targets = calculate_dqn_targets(
+            [transition],
+            target_network,
+            self.config,
+            discount_factor=1.0,
+        )
+
+        self.assertEqual(targets.shape, (1,))
+        self.assertTrue(torch.isfinite(targets).all().item())
 
 
 if __name__ == "__main__":

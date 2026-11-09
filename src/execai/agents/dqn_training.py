@@ -39,14 +39,14 @@ def calculate_dqn_targets(
                 next_state = encode_observation(
                     next_observation,
                     config,
+                    use_liquidity=target_network.use_liquidity,
                 )
 
                 next_q_values = target_network(next_state)
                 valid_actions = get_valid_actions(next_observation, config)
 
                 best_future_value = max(
-                    next_q_values[action].item() 
-                    for action in valid_actions
+                    next_q_values[action].item() for action in valid_actions
                 )
 
                 target += discount_factor * best_future_value
@@ -118,6 +118,7 @@ class DQNTrainer:
                 encode_observation(
                     transition.observation,
                     self.agent.config,
+                    use_liquidity=self.agent.use_liquidity,
                 )
                 for transition in transitions
             ]

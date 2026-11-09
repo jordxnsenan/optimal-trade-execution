@@ -233,6 +233,74 @@ class DQNActionSelectionTests(unittest.TestCase):
                         exploration_rate=exploration_rate,
                     )
 
+    def test_liquidity_aware_state_encoding(self):
+        observation = {
+            "time_step": 1,
+            "remaining_lots": 2,
+            "relative_liquidity": 1.25,
+        }
+
+        state = encode_observation(
+            observation,
+            self.config,
+            use_liquidity=True,
+        )
+
+        torch.testing.assert_close(
+            state,
+            torch.tensor([0.5, 0.5, 1.25]),
+        )
+
+    def test_basic_state_encoding_ignores_liquidity(self):
+        observation = {
+            "time_step": 1,
+            "remaining_lots": 2,
+            "relative_liquidity": 1.25,
+        }
+
+        state = encode_observation(observation, self.config)
+
+        torch.testing.assert_close(
+            state,
+            torch.tensor([0.5, 0.5]),
+        )
+
+    def test_liquidity_aware_network_accepts_three_features(self):
+        network = QNetwork(
+            num_lots=self.config.num_lots,
+            use_liquidity=True,
+        )
+
+        states = torch.tensor(
+            [
+                [0.0, 1.0, 0.5],
+                [0.5, 0.5, 1.5],
+            ]
+        )
+
+        with torch.no_grad():
+            q_values = network(states)
+
+        self.assertEqual(q_values.shape, (2, 5))
+
+    def test_liquidity_aware_encoding_rejects_invalid_values(self):
+        invalid_values = [0.0, -1.0, float("nan"), float("inf")]
+
+        for liquidity in invalid_values:
+            observation = {
+                "time_step": 1,
+                "remaining_lots": 2,
+                "relative_liquidity": liquidity,
+            }
+
+            with self.subTest(liquidity=liquidity):
+                with self.assertRaises(ValueError):
+                    encode_observation(
+                        observation,
+                        self.config,
+                        use_liquidity=True,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
