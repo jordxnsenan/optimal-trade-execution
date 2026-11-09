@@ -19,6 +19,7 @@ from execai.policies.almgren_chriss import optimize_almgren_chriss_schedule
 from execai.policies.baselines import immediate_action, twap_action
 from execai.policies.schedules import scheduled_action
 from execai.policies.vwap import build_vwap_schedule, vwap_action
+from execai.evaluation.statistics import paired_bootstrap_confidence_interval
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
@@ -240,6 +241,13 @@ def main() -> None:
     ]
 
     print(f"\nDQN minus TWAP: " f"{mean(paired_differences):+.4f} bps")
+
+    lower_bound, upper_bound = paired_bootstrap_confidence_interval(
+        results["DQN"],
+        results["TWAP"],
+    )
+
+    print(f"95% paired bootstrap CI: " f"[{lower_bound:+.4f}, {upper_bound:+.4f}] bps")
 
 
 if __name__ == "__main__":

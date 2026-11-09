@@ -43,3 +43,16 @@ The trained policy was evaluated without exploration on 250 new synthetic price 
 
 DQN's mean shortfall was 0.2351 basis points higher than TWAP which suggests that DQN learned a competitive execution policy, although it did not outperform the simpler scheduling strategies.
 The current DQN observes only time and remaining inventory.
+
+### Common-Scenario Training-Seed Comparison
+
+I repeated stochastic DQN training using four independent seeds. Each agent was evaluated on the same 250 synthetic price paths to separate differences in training outcomes from variation in evaluation scenarios.
+
+| Training Seed | TWAP (bps) | DQN (bps) | DQN − TWAP (bps) |
+| ------------- | ---------: | --------: | ---------------: |
+| 42            |     7.1664 |    7.7040 |          +0.5375 |
+| 7             |     7.1664 |   10.5545 |          +3.3881 |
+| 123           |     7.1664 |    9.1991 |          +2.0327 |
+| 2026          |     7.1664 |    7.3844 |          +0.2179 |
+
+DQN was more expensive than TWAP in all four runs. The variation between learned policies suggests that training stability needs further investigation.
