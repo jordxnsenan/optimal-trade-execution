@@ -1,6 +1,10 @@
 import unittest
+import math
 
-from execai.agents.dqn_scenarios import generate_training_paths
+from execai.agents.dqn_scenarios import (
+    generate_training_paths,
+    generate_liquidity_profiles,
+)
 from execai.environment.config import ExecutionConfig
 
 
@@ -47,6 +51,118 @@ class DQNScenarioTests(unittest.TestCase):
     def test_rejects_invalid_episode_count(self):
         with self.assertRaises(ValueError):
             generate_training_paths(self.config, self.volatility, 0, 42)
+
+    def test_generates_variable_liquidity_profiles(self):
+        expected_profile = [1.0] * self.config.num_time_steps
+
+        profiles = generate_liquidity_profiles(
+            self.config,
+            expected_profile,
+            num_episodes=5,
+            starting_seed=42,
+        )
+
+        self.assertEqual(len(profiles), 5)
+
+        for profile in profiles:
+            self.assertEqual(len(profile), self.config.num_time_steps)
+            self.assertTrue(
+                all(math.isfinite(value) and value > 0 for value in profile)
+            )
+
+        self.assertNotEqual(profiles[0], profiles[1])
+
+    def test_liquidity_generation_is_reproducible(self):
+        expected_profile = [1.0] * self.config.num_time_steps
+
+        first_profiles = generate_liquidity_profiles(
+            self.config,
+            expected_profile,
+            num_episodes=5,
+            starting_seed=42,
+        )
+
+        second_profiles = generate_liquidity_profiles(
+            self.config,
+            expected_profile,
+            num_episodes=5,
+            starting_seed=42,
+        )
+
+        self.assertEqual(first_profiles, second_profiles)
+
+    def test_zero_noise_preserves_expected_liquidity(self):
+        expected_profile = [1.2, 0.8] * 6
+
+        profiles = generate_liquidity_profiles(
+            self.config,
+            expected_profile,
+            num_episodes=3,
+            starting_seed=42,
+            noise_std=0.0,
+        )
+
+        for profile in profiles:
+            self.assertEqual(profile, expected_profile)
+
+    def test_future_forecast_does_not_change_current_liquidity(self):
+        first_profile = [1.0] * self.config.num_time_steps
+        second_profile = first_profile.copy()
+
+        second_profile[-1] = 2.0
+
+        first_result = generate_liquidity_profiles(
+            self.config,
+            first_profile,
+            num_episodes=1,
+            starting_seed=42,
+        )
+
+        second_result = generate_liquidity_profiles(
+            self.config,
+            second_profile,
+            num_episodes=1,
+            starting_seed=42,
+        )
+
+        self.assertEqual(first_result[0][0], second_result[0][0])
+
+    def test_rejects_invalid_liquidity_settings(self):
+        expected_profile = [1.0] * self.config.num_time_steps
+
+        with self.assertRaises(ValueError):
+            generate_liquidity_profiles(
+                self.config,
+                expected_profile,
+                num_episodes=0,
+                starting_seed=42,
+            )
+
+        with self.assertRaises(ValueError):
+            generate_liquidity_profiles(
+                self.config,
+                expected_profile[:-1],
+                num_episodes=5,
+                starting_seed=42,
+            )
+
+        with self.assertRaises(ValueError):
+            generate_liquidity_profiles(
+                self.config,
+                expected_profile,
+                num_episodes=5,
+                starting_seed=42,
+                noise_std=-0.1,
+            )
+
+        with self.assertRaises(ValueError):
+            generate_liquidity_profiles(
+                self.config,
+                expected_profile,
+                num_episodes=5,
+                starting_seed=42,
+                noise_std=float("nan"),
+            )
 
 
 if __name__ == "__main__":
