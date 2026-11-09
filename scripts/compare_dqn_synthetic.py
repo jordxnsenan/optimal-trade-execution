@@ -42,17 +42,29 @@ def evaluate_policies(
     environment: ExecutionEnvironment,
     price_paths: list[list[float]],
     policies: dict[str, Callable[[dict], int]],
+    liquidity_profiles: list[list[float]] | None = None,
 ) -> dict[str, list[float]]:
     """evaluates every policy on the same price paths"""
 
     if not price_paths:
         raise ValueError("At least one evaluation path is required.")
 
+    if liquidity_profiles is not None and len(liquidity_profiles) != len(price_paths):
+        raise ValueError("Each evaluation path must have a matching liquidity profile.")
+
     results = {policy_name: [] for policy_name in policies}
 
-    for prices in price_paths:
+    for episode_index, prices in enumerate(price_paths):
+        episode_liquidity = None
+
+        if liquidity_profiles is not None:
+            episode_liquidity = liquidity_profiles[episode_index]
+
         for policy_name, policy in policies.items():
-            observation = environment.reset(prices)
+            observation = environment.reset(
+                prices,
+                liquidity_profile=episode_liquidity,
+            )
 
             while observation is not None:
                 action = policy(observation)

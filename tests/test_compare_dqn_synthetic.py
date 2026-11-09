@@ -102,6 +102,66 @@ class SyntheticDQNComparisonTests(unittest.TestCase):
                 {"Immediate": immediate_action},
             )
 
+    def test_evaluates_episode_specific_liquidity(self):
+        price_paths = [
+            [100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0],
+        ]
+
+        liquidity_profiles = [
+            [0.5, 1.0, 1.0],
+            [2.0, 1.0, 1.0],
+        ]
+
+        results = evaluate_policies(
+            self.environment,
+            price_paths,
+            {"Immediate": immediate_action},
+            liquidity_profiles=liquidity_profiles,
+        )
+
+        # immediate execution sells everything at first step
+        self.assertAlmostEqual(results["Immediate"][0], 46.0)
+        self.assertAlmostEqual(results["Immediate"][1], 16.0)
+
+    def test_policies_receive_the_same_liquidity(self):
+        price_paths = [
+            [100.0, 100.0, 100.0],
+        ]
+
+        liquidity_profiles = [
+            [0.5, 1.5, 1.0],
+        ]
+
+        results = evaluate_policies(
+            self.environment,
+            price_paths,
+            {
+                "First": immediate_action,
+                "Second": immediate_action,
+            },
+            liquidity_profiles=liquidity_profiles,
+        )
+
+        self.assertEqual(results["First"], results["Second"])
+        self.assertAlmostEqual(results["First"][0], 46.0)
+
+    def test_rejects_unmatched_evaluation_liquidity(self):
+        price_paths = [
+            [100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0],
+        ]
+
+        with self.assertRaisesRegex(ValueError, "matching liquidity"):
+            evaluate_policies(
+                self.environment,
+                price_paths,
+                {"Immediate": immediate_action},
+                liquidity_profiles=[
+                    [1.0, 1.0, 1.0],
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
