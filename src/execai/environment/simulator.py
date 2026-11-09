@@ -79,6 +79,7 @@ class ExecutionEnvironment:
             "time_step": self.current_step,
             "remaining_lots": self.inventory.remaining_lots,
             "market_price": self._prices[self.current_step],
+            "relative_liquidity": self._liquidity_profile[self.current_step],
         }
 
     def step(self, num_lots: int) -> tuple[dict | None, float, bool]:

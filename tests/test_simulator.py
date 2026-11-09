@@ -355,5 +355,80 @@ class ExecutionEnvironmentTests(unittest.TestCase):
         self.assertFalse(environment.is_done)
 
 
+class LiquidityObservationTests(unittest.TestCase):
+
+    def setUp(self):
+        self.config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=3,
+            num_lots=4,
+        )
+
+        self.prices = [100.0, 100.0, 100.0]
+
+    def test_observation_contains_current_liquidity(self):
+        environment = ExecutionEnvironment(
+            self.config,
+            liquidity_profile=[0.5, 1.5, 1.0],
+        )
+
+        observation = environment.reset(self.prices)
+
+        self.assertAlmostEqual(
+            observation["relative_liquidity"],
+            0.5,
+        )
+
+        observation, _, is_done = environment.step(0)
+
+        self.assertFalse(is_done)
+        self.assertAlmostEqual(
+            observation["relative_liquidity"],
+            1.5,
+        )
+
+        observation, _, is_done = environment.step(0)
+
+        self.assertFalse(is_done)
+        self.assertAlmostEqual(
+            observation["relative_liquidity"],
+            1.0,
+        )
+
+        observation, _, is_done = environment.step(4)
+
+        self.assertTrue(is_done)
+        self.assertIsNone(observation)
+
+    def test_default_observation_uses_reference_liquidity(self):
+        environment = ExecutionEnvironment(self.config)
+
+        observation = environment.reset(self.prices)
+
+        self.assertAlmostEqual(
+            observation["relative_liquidity"],
+            1.0,
+        )
+
+    def test_future_liquidity_does_not_change_current_observation(self):
+        first_environment = ExecutionEnvironment(
+            self.config,
+            liquidity_profile=[0.5, 1.5, 1.0],
+        )
+
+        second_environment = ExecutionEnvironment(
+            self.config,
+            liquidity_profile=[0.5, 1.0, 1.5],
+        )
+
+        first_observation = first_environment.reset(self.prices)
+        second_observation = second_environment.reset(self.prices)
+
+        self.assertEqual(
+            first_observation,
+            second_observation,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
