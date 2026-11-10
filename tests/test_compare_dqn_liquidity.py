@@ -1,0 +1,136 @@
+import math
+import torch
+import unittest
+
+from functools import partial
+from scripts.compare_dqn_liquidity import (
+    generate_market_scenarios,
+    train_agent,
+)
+from scripts.compare_dqn_synthetic import evaluate_policies
+from execai.environment.config import ExecutionConfig
+from execai.environment.costs import ExecutionCostConfig
+from execai.environment.simulator import ExecutionEnvironment
+
+
+class LiquidityDQNComparisonTests(unittest.TestCase):
+
+    def setUp(self):
+        torch.set_num_threads(1)
+
+        self.config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=3,
+            num_lots=4,
+        )
+
+        self.cost_config = ExecutionCostConfig(
+            half_spread_bps=5.0,
+            temporary_impact_bps=20.0,
+            fee_per_share=0.01,
+        )
+
+    def test_market_scenarios_are_reproducible(self):
+        expected_liquidity = [1.2, 1.0, 0.8]
+
+        first_scenarios = generate_market_scenarios(
+            self.config,
+            0.001,
+            expected_liquidity,
+            num_episodes=5,
+            price_seed=42,
+            liquidity_seed=100,
+        )
+
+        second_scenarios = generate_market_scenarios(
+            self.config,
+            0.001,
+            expected_liquidity,
+            num_episodes=5,
+            price_seed=42,
+            liquidity_seed=100,
+        )
+
+        self.assertEqual(first_scenarios, second_scenarios)
+
+    def test_liquidity_randomness_is_separate_from_prices(self):
+        expected_liquidity = [1.0, 1.0, 1.0]
+
+        first_prices, first_liquidity = generate_market_scenarios(
+            self.config,
+            0.001,
+            expected_liquidity,
+            num_episodes=5,
+            price_seed=42,
+            liquidity_seed=100,
+        )
+
+        second_prices, second_liquidity = generate_market_scenarios(
+            self.config,
+            0.001,
+            expected_liquidity,
+            num_episodes=5,
+            price_seed=42,
+            liquidity_seed=200,
+        )
+
+        self.assertEqual(first_prices, second_prices)
+        self.assertNotEqual(first_liquidity, second_liquidity)
+
+    def test_both_dqn_variants_complete_variable_liquidity_episodes(self):
+        prices = [
+            [100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0],
+        ]
+
+        liquidity_profiles = [
+            [0.5, 1.0, 1.5],
+            [1.5, 1.0, 0.5],
+            [1.0, 0.8, 1.2],
+        ]
+
+        agents = {}
+
+        for use_liquidity in (False, True):
+            agent, costs, _ = train_agent(
+                self.config,
+                self.cost_config,
+                prices,
+                liquidity_profiles,
+                seed=42,
+                use_liquidity=use_liquidity,
+            )
+
+            self.assertEqual(len(costs), len(prices))
+            self.assertTrue(all(math.isfinite(cost) for cost in costs))
+
+            agents[use_liquidity] = agent
+
+        self.assertFalse(agents[False].use_liquidity)
+        self.assertTrue(agents[True].use_liquidity)
+
+        policies = {
+            "Basic DQN": partial(
+                agents[False].select_action,
+                exploration_rate=0.0,
+            ),
+            "Liquidity-Aware DQN": partial(
+                agents[True].select_action,
+                exploration_rate=0.0,
+            ),
+        }
+
+        results = evaluate_policies(
+            ExecutionEnvironment(self.config, self.cost_config),
+            prices,
+            policies,
+            liquidity_profiles=liquidity_profiles,
+        )
+
+        self.assertEqual(len(results["Basic DQN"]), 3)
+        self.assertEqual(len(results["Liquidity-Aware DQN"]), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
