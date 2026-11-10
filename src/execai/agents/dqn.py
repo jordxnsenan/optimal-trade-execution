@@ -69,6 +69,7 @@ class QNetwork(nn.Module):
             raise ValueError("Use liquidity must be a boolean.")
 
         self.use_liquidity = use_liquidity
+        self.hidden_units = hidden_units
 
         num_features = STATE_FEATURE_COUNT + int(use_liquidity)
         num_actions = num_lots + 1

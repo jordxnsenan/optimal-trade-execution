@@ -16,6 +16,7 @@ from execai.agents.dqn_scenarios import (
 )
 from execai.agents.dqn_training import DQNTrainer
 from execai.agents.replay_buffer import ReplayBuffer
+from execai.agents.checkpoints import save_dqn_checkpoint
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
 from execai.environment.liquidity import build_relative_liquidity_profile
@@ -225,6 +226,12 @@ def main() -> None:
         default=DEFAULT_SEED,
     )
 
+    parser.add_argument(
+        "--save-checkpoints",
+        action="store_true",
+        help="Save selected DQN networks after training.",
+    )
+
     arguments = parser.parse_args()
 
     if arguments.episodes <= 0 or arguments.evaluation_episodes < 2:
@@ -335,6 +342,26 @@ def main() -> None:
             f"episode {best_episode} "
             f"({best_cost:.4f} bps)"
         )
+
+        if arguments.save_checkpoints:
+            model_name = "liquidity_aware" if use_liquidity else "basic"
+
+            checkpoint_path = (
+                PROJECT_ROOT
+                / "results"
+                / "models"
+                / f"dqn_{model_name}_seed_{arguments.seed}.pt"
+            )
+
+            save_dqn_checkpoint(
+                agent,
+                checkpoint_path,
+                training_seed=arguments.seed,
+                best_episode=best_episode,
+                validation_cost_bps=best_cost,
+            )
+
+            print(f"Saved checkpoint: {checkpoint_path}")
 
     vwap_schedule = build_vwap_schedule(
         config,
