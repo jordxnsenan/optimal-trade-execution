@@ -3,6 +3,7 @@ import torch
 import unittest
 
 from functools import partial
+from unittest.mock import patch
 from scripts.compare_dqn_liquidity import (
     average_actions_by_step,
     generate_market_scenarios,
@@ -95,15 +96,21 @@ class LiquidityDQNComparisonTests(unittest.TestCase):
         agents = {}
 
         for use_liquidity in (False, True):
-            agent, costs, _ = train_agent(
+
+            agent, costs, _, validation_history = train_agent(
                 self.config,
                 self.cost_config,
                 prices,
                 liquidity_profiles,
+                validation_paths=[[100.0, 100.0, 100.0]],
+                validation_liquidity=[[1.0, 1.0, 1.0]],
                 seed=42,
                 use_liquidity=use_liquidity,
             )
 
+            self.assertEqual(len(validation_history), 1)
+            self.assertEqual(validation_history[0][0], len(prices))
+            self.assertTrue(math.isfinite(validation_history[0][1]))
             self.assertEqual(len(costs), len(prices))
             self.assertTrue(all(math.isfinite(cost) for cost in costs))
 
@@ -201,6 +208,67 @@ class LiquidityDQNComparisonTests(unittest.TestCase):
         )
 
         self.assertEqual(average_actions, [2.0, 2.0])
+
+    @patch("scripts.compare_dqn_liquidity.evaluate_policies")
+    @patch("scripts.compare_dqn_liquidity.train_dqn")
+    def test_training_restores_best_validation_checkpoint(
+        self,
+        mock_train_dqn,
+        mock_evaluate_policies,
+    ):
+        mock_evaluate_policies.side_effect = [
+            {"DQN": [12.0]},
+            {"DQN": [6.0]},
+            {"DQN": [10.0]},
+        ]
+
+        def simulate_training(
+            agent,
+            trainer,
+            environment,
+            price_paths,
+            **kwargs,
+        ):
+            validation_callback = kwargs["validation_callback"]
+
+            checkpoints = [
+                (200, 1.0),
+                (400, 2.0),
+                (600, 3.0),
+            ]
+
+            for completed_episodes, weight_value in checkpoints:
+                with torch.no_grad():
+                    for parameter in agent.network.parameters():
+                        parameter.fill_(weight_value)
+
+                validation_callback(agent, completed_episodes)
+
+            return [5.0] * len(price_paths)
+
+        mock_train_dqn.side_effect = simulate_training
+
+        agent, episode_costs, _, validation_history = train_agent(
+            self.config,
+            self.cost_config,
+            price_paths=[[100.0, 100.0, 100.0]],
+            liquidity_profiles=[[1.0, 1.0, 1.0]],
+            validation_paths=[[100.0, 100.0, 100.0]],
+            validation_liquidity=[[1.0, 1.0, 1.0]],
+            seed=42,
+            use_liquidity=True,
+        )
+
+        self.assertEqual(
+            validation_history,
+            [(200, 12.0), (400, 6.0), (600, 10.0)],
+        )
+
+        self.assertEqual(episode_costs, [5.0])
+
+        # episode 400 had the best validation cost so returned network must contain its weights
+        for parameter in agent.network.parameters():
+            self.assertTrue(torch.all(parameter == 2.0).item())
 
 
 if __name__ == "__main__":

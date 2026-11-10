@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import torch
 
@@ -48,6 +49,12 @@ AC_RISK_SENSITIVE = 0.05
 TRAINING_LIQUIDITY_SEED_OFFSET = 50_000_000
 EVALUATION_PRICE_SEED = 10_000_000
 EVALUATION_LIQUIDITY_SEED = 20_000_000
+
+VALIDATION_EPISODES = 100
+VALIDATION_INTERVAL = 200
+
+VALIDATION_PRICE_SEED = 30_000_000
+VALIDATION_LIQUIDITY_SEED = 40_000_000
 
 
 def generate_market_scenarios(
@@ -112,9 +119,11 @@ def train_agent(
     cost_config: ExecutionCostConfig,
     price_paths: list[list[float]],
     liquidity_profiles: list[list[float]],
+    validation_paths: list[list[float]],
+    validation_liquidity: list[list[float]],
     seed: int,
     use_liquidity: bool,
-) -> tuple[DQNAgent, list[float], int]:
+) -> tuple[DQNAgent, list[float], int, list[tuple[int, float]]]:
     """trains one DQN configuration on the supplied market scenarios"""
 
     torch.manual_seed(seed)
@@ -137,19 +146,60 @@ def train_agent(
         target_sync_interval=TARGET_SYNC_INTERVAL,
     )
 
-    environment = ExecutionEnvironment(config, cost_config)
+    training_environment = ExecutionEnvironment(config, cost_config)
+    validation_environment = ExecutionEnvironment(config, cost_config)
+
+    validation_history = []
+
+    best_validation_cost = float("inf")
+    best_network_weights = None
+
+    def record_validation(
+        current_agent: DQNAgent,
+        completed_episodes: int,
+    ) -> None:
+        """evaluates the greedy policy and save its best weights"""
+
+        nonlocal best_validation_cost, best_network_weights
+
+        validation_results = evaluate_policies(
+            validation_environment,
+            validation_paths,
+            {
+                "DQN": partial(
+                    current_agent.select_action,
+                    exploration_rate=0.0,
+                ),
+            },
+            liquidity_profiles=validation_liquidity,
+        )
+
+        average_cost = mean(validation_results["DQN"])
+
+        validation_history.append((completed_episodes, average_cost))
+
+        if average_cost < best_validation_cost:
+            best_validation_cost = average_cost
+            best_network_weights = copy.deepcopy(current_agent.network.state_dict())
 
     episode_costs = train_dqn(
         agent,
         trainer,
-        environment,
+        training_environment,
         price_paths,
         initial_exploration_rate=1.0,
         final_exploration_rate=0.05,
         liquidity_profiles=liquidity_profiles,
+        validation_interval=VALIDATION_INTERVAL,
+        validation_callback=record_validation,
     )
 
-    return agent, episode_costs, trainer.update_count
+    if best_network_weights is None:
+        raise RuntimeError("No validation checkpoint was recorded.")
+
+    agent.network.load_state_dict(best_network_weights)
+
+    return agent, episode_costs, trainer.update_count, validation_history
 
 
 def main() -> None:
@@ -230,16 +280,27 @@ def main() -> None:
         EVALUATION_LIQUIDITY_SEED,
     )
 
+    validation_paths, validation_liquidity = generate_market_scenarios(
+        config,
+        volatility,
+        expected_liquidity,
+        VALIDATION_EPISODES,
+        VALIDATION_PRICE_SEED,
+        VALIDATION_LIQUIDITY_SEED,
+    )
+
     agents = {}
 
     for use_liquidity in (False, True):
         name = "Liquidity-Aware DQN" if use_liquidity else "Basic DQN"
 
-        agent, episode_costs, update_count = train_agent(
+        agent, episode_costs, update_count, validation_history = train_agent(
             config,
             cost_config,
             training_paths,
             training_liquidity,
+            validation_paths,
+            validation_liquidity,
             arguments.seed,
             use_liquidity,
         )
@@ -257,6 +318,22 @@ def main() -> None:
         print(
             f"Last {recent_count} episodes: "
             f"{mean(episode_costs[-recent_count:]):.4f} bps"
+        )
+
+        print("\nGreedy validation performance:")
+
+        for completed_episodes, average_cost in validation_history:
+            print(f"After {completed_episodes} episodes: " f"{average_cost:.4f} bps")
+
+        best_episode, best_cost = min(
+            validation_history,
+            key=lambda result: result[1],
+        )
+
+        print(
+            f"Restored best checkpoint: "
+            f"episode {best_episode} "
+            f"({best_cost:.4f} bps)"
         )
 
     vwap_schedule = build_vwap_schedule(
