@@ -4,6 +4,7 @@ import unittest
 
 from functools import partial
 from scripts.compare_dqn_liquidity import (
+    average_actions_by_step,
     generate_market_scenarios,
     train_agent,
 )
@@ -11,6 +12,7 @@ from scripts.compare_dqn_synthetic import evaluate_policies
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
 from execai.environment.simulator import ExecutionEnvironment
+from execai.policies.baselines import immediate_action, twap_action
 
 
 class LiquidityDQNComparisonTests(unittest.TestCase):
@@ -130,6 +132,75 @@ class LiquidityDQNComparisonTests(unittest.TestCase):
 
         self.assertEqual(len(results["Basic DQN"]), 3)
         self.assertEqual(len(results["Liquidity-Aware DQN"]), 3)
+
+    def test_average_actions_for_known_policies(self):
+        price_paths = [
+            [100.0, 100.0, 100.0],
+            [100.0, 100.0, 100.0],
+        ]
+
+        liquidity_profiles = [
+            [1.0, 1.0, 1.0],
+            [0.5, 1.5, 1.0],
+        ]
+
+        environment = ExecutionEnvironment(
+            self.config,
+            self.cost_config,
+        )
+
+        immediate_actions = average_actions_by_step(
+            environment,
+            price_paths,
+            liquidity_profiles,
+            immediate_action,
+        )
+
+        twap_actions = average_actions_by_step(
+            environment,
+            price_paths,
+            liquidity_profiles,
+            partial(twap_action, config=self.config),
+        )
+
+        self.assertEqual(immediate_actions, [4.0, 0.0, 0.0])
+        self.assertEqual(twap_actions, [2.0, 1.0, 1.0])
+
+    def test_average_actions_reflect_current_liquidity(self):
+        config = ExecutionConfig(
+            total_shares=400,
+            num_time_steps=2,
+            num_lots=4,
+        )
+
+        environment = ExecutionEnvironment(
+            config,
+            self.cost_config,
+        )
+
+        def liquidity_policy(observation):
+            if (
+                observation["time_step"] == 0
+                and observation["relative_liquidity"] < 1.0
+            ):
+                return 0
+
+            return observation["remaining_lots"]
+
+        average_actions = average_actions_by_step(
+            environment,
+            price_paths=[
+                [100.0, 100.0],
+                [100.0, 100.0],
+            ],
+            liquidity_profiles=[
+                [0.5, 1.0],
+                [2.0, 1.0],
+            ],
+            policy=liquidity_policy,
+        )
+
+        self.assertEqual(average_actions, [2.0, 2.0])
 
 
 if __name__ == "__main__":

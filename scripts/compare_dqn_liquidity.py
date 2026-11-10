@@ -5,6 +5,7 @@ import torch
 from functools import partial
 from pathlib import Path
 from statistics import mean
+from typing import Callable
 
 from execai.agents.dqn import DQNAgent
 from execai.agents.dqn_episodes import train_dqn
@@ -74,6 +75,36 @@ def generate_market_scenarios(
     )
 
     return price_paths, liquidity_profiles
+
+
+def average_actions_by_step(
+    environment: ExecutionEnvironment,
+    price_paths: list[list[float]],
+    liquidity_profiles: list[list[float]],
+    policy: Callable[[dict], int],
+) -> list[float]:
+    """calculates the average number of lots sold at each decision"""
+
+    if not price_paths or len(price_paths) != len(liquidity_profiles):
+        raise ValueError("Price paths and liquidity profiles must match.")
+
+    action_totals = [0] * environment.config.num_time_steps
+
+    for prices, liquidity_profile in zip(price_paths, liquidity_profiles):
+        observation = environment.reset(
+            prices,
+            liquidity_profile=liquidity_profile,
+        )
+
+        while observation is not None:
+            time_step = observation["time_step"]
+            action = policy(observation)
+
+            action_totals[time_step] += action
+
+            observation, _, _ = environment.step(action)
+
+    return [total / len(price_paths) for total in action_totals]
 
 
 def train_agent(
@@ -321,6 +352,28 @@ def main() -> None:
             f"{mean(differences):+.4f} bps "
             f"| 95% CI [{lower_bound:+.4f}, {upper_bound:+.4f}]"
         )
+
+    print("\nAverage lots sold per time step:")
+
+    diagnostic_environment = ExecutionEnvironment(config, cost_config)
+
+    diagnostic_policies = (
+        "TWAP",
+        "Basic DQN",
+        "Liquidity-Aware DQN",
+    )
+
+    for policy_name in diagnostic_policies:
+        average_actions = average_actions_by_step(
+            diagnostic_environment,
+            evaluation_paths,
+            evaluation_liquidity,
+            policies[policy_name],
+        )
+
+        formatted_actions = ", ".join(f"{action:.2f}" for action in average_actions)
+
+        print(f"{policy_name}: [{formatted_actions}]")
 
 
 if __name__ == "__main__":
