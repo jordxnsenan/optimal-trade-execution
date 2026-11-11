@@ -294,6 +294,40 @@ class DQNEpisodeTrainingTests(unittest.TestCase):
                 ],
             )
 
+    def test_validation_runs_at_intervals_and_final_episode(self):
+        validation_episodes = []
+
+        def record_validation(agent, completed_episodes):
+            self.assertIs(agent, self.agent)
+            self.assertTrue(self.environment.is_done)
+
+            validation_episodes.append(completed_episodes)
+
+        price_paths = [[100.0, 100.0, 100.0] for _ in range(5)]
+
+        train_dqn(
+            self.agent,
+            self.trainer,
+            self.environment,
+            price_paths,
+            validation_interval=2,
+            validation_callback=record_validation,
+        )
+
+        self.assertEqual(validation_episodes, [2, 4, 5])
+
+    def test_rejects_invalid_validation_interval(self):
+        for interval in (0, -1, True, 2.5):
+            with self.subTest(interval=interval):
+                with self.assertRaises(ValueError):
+                    train_dqn(
+                        self.agent,
+                        self.trainer,
+                        self.environment,
+                        [[100.0, 100.0, 100.0]],
+                        validation_interval=interval,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
