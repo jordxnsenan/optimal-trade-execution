@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from scripts.evaluate_dqn_robustness import (
     ROBUSTNESS_SCENARIOS,
+    get_scenario_liquidity_profile,
     run_robustness_scenarios,
     save_robustness_results,
 )
@@ -156,6 +157,83 @@ class DQNRobustnessScriptTests(unittest.TestCase):
         self.assertEqual(
             rows_by_policy["Basic DQN (seed 42)"]["shortfall_bps"],
             "6.0",
+        )
+
+        self.assertEqual(
+            rows_by_policy["TWAP"]["liquidity_pattern"],
+            "uniform",
+        )
+
+    def test_late_liquidity_drop_affects_second_half(self):
+        forecast = [1.2, 1.0, 0.8, 1.1]
+
+        stressed_profile = get_scenario_liquidity_profile(
+            "late_liquidity_drop",
+            forecast,
+        )
+
+        self.assertEqual(
+            stressed_profile,
+            [1.2, 1.0, 0.4, 0.55],
+        )
+
+        self.assertEqual(
+            forecast,
+            [1.2, 1.0, 0.8, 1.1],
+        )
+
+    def test_other_scenarios_preserve_forecast_liquidity(self):
+        forecast = [1.2, 1.0, 0.8, 1.1]
+
+        result = get_scenario_liquidity_profile(
+            "nominal",
+            forecast,
+        )
+
+        self.assertEqual(result, forecast)
+        self.assertIsNot(result, forecast)
+
+    @patch("scripts.evaluate_dqn_robustness.evaluate_frozen_scenario")
+    def test_late_liquidity_is_forwarded_to_evaluation(
+        self,
+        mock_evaluate,
+    ):
+        scenarios = {
+            "nominal": ROBUSTNESS_SCENARIOS["nominal"],
+            "late_liquidity_drop": ROBUSTNESS_SCENARIOS["late_liquidity_drop"],
+        }
+
+        run_robustness_scenarios(
+            self.sessions,
+            self.config,
+            self.cost_config,
+            self.policies,
+            [1.0, 1.0, 1.0],
+            scenarios,
+        )
+
+        nominal_call = mock_evaluate.call_args_list[0]
+        stressed_call = mock_evaluate.call_args_list[1]
+
+        self.assertEqual(
+            nominal_call.args[4],
+            [1.0, 1.0, 1.0],
+        )
+
+        self.assertEqual(
+            stressed_call.args[4],
+            [1.0, 0.5, 0.5],
+        )
+
+        self.assertIs(
+            nominal_call.args[3],
+            stressed_call.args[3],
+        )
+
+    def test_late_liquidity_scenario_matches_protocol(self):
+        self.assertEqual(
+            ROBUSTNESS_SCENARIOS["late_liquidity_drop"],
+            ("linear", 20.0, 1.0),
         )
 
 

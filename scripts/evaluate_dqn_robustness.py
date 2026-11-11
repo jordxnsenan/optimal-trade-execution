@@ -35,8 +35,11 @@ EXISTING_TRAINING_SEEDS = (7, 42, 123, 2026)
 
 LOW_IMPACT_BPS = 10.0
 HIGH_IMPACT_BPS = 40.0
+
 REFERENCE_LIQUIDITY_SCALE = 1.0
 REDUCED_LIQUIDITY_SCALE = 0.5
+LATE_LIQUIDITY_SCENARIO = "late_liquidity_drop"
+LATE_LIQUIDITY_MULTIPLIER = 0.5
 
 ROBUSTNESS_SCENARIOS = {
     "nominal": ("linear", TEMPORARY_IMPACT_BPS, REFERENCE_LIQUIDITY_SCALE),
@@ -47,6 +50,11 @@ ROBUSTNESS_SCENARIOS = {
         "linear",
         TEMPORARY_IMPACT_BPS,
         REDUCED_LIQUIDITY_SCALE,
+    ),
+    LATE_LIQUIDITY_SCENARIO: (
+        "linear",
+        TEMPORARY_IMPACT_BPS,
+        REFERENCE_LIQUIDITY_SCALE,
     ),
 }
 
@@ -139,6 +147,23 @@ def build_frozen_policies(
     return policies, checkpoint_metadata
 
 
+def get_scenario_liquidity_profile(
+    scenario_name: str,
+    forecast_liquidity: list[float],
+) -> list[float]:
+    """returns the liquidity profile used by a robustness scenario"""
+
+    if scenario_name != LATE_LIQUIDITY_SCENARIO:
+        return forecast_liquidity.copy()
+
+    midpoint = len(forecast_liquidity) // 2
+
+    return [
+        liquidity if step < midpoint else liquidity * LATE_LIQUIDITY_MULTIPLIER
+        for step, liquidity in enumerate(forecast_liquidity)
+    ]
+
+
 def run_robustness_scenarios(
     sessions,
     config,
@@ -154,12 +179,17 @@ def run_robustness_scenarios(
     for scenario_name, settings in scenarios.items():
         impact_model, impact_strength, liquidity_scale = settings
 
+        scenario_liquidity = get_scenario_liquidity_profile(
+            scenario_name,
+            forecast_liquidity,
+        )
+
         results[scenario_name] = evaluate_frozen_scenario(
             sessions,
             config,
             nominal_cost_config,
             policies,
-            forecast_liquidity,
+            scenario_liquidity,
             impact_model=impact_model,
             impact_strength_bps=impact_strength,
             liquidity_scale=liquidity_scale,
@@ -187,6 +217,7 @@ def save_robustness_results(
                 "impact_model",
                 "impact_strength_bps",
                 "liquidity_scale",
+                "liquidity_pattern",
                 "trading_date",
                 "policy",
                 "training_seed",
@@ -197,6 +228,12 @@ def save_robustness_results(
 
         for scenario_name, policy_results in results.items():
             impact_model, impact_strength, liquidity_scale = scenarios[scenario_name]
+
+            liquidity_pattern = (
+                "late_half_x0.5"
+                if scenario_name == LATE_LIQUIDITY_SCENARIO
+                else "uniform"
+            )
 
             for policy_name, daily_costs in policy_results.items():
                 training_seed, best_episode = checkpoint_metadata.get(
@@ -211,6 +248,7 @@ def save_robustness_results(
                             impact_model,
                             impact_strength,
                             liquidity_scale,
+                            liquidity_pattern,
                             trading_date.isoformat(),
                             policy_name,
                             training_seed,
