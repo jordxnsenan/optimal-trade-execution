@@ -1,7 +1,9 @@
 import unittest
 
+
 from execai.evaluation.statistics import (
     paired_bootstrap_confidence_interval,
+    two_way_bootstrap_confidence_interval,
 )
 
 
@@ -100,6 +102,102 @@ class PairedBootstrapTests(unittest.TestCase):
                 [5.0, float("inf")],
                 [4.0, 5.0],
             )
+
+
+class TwoWayBootstrapTests(unittest.TestCase):
+
+    def test_constant_paired_difference(self):
+        differences = [
+            [2.0, 2.0, 2.0],
+            [2.0, 2.0, 2.0],
+        ]
+
+        lower, upper = two_way_bootstrap_confidence_interval(
+            differences,
+        )
+
+        self.assertAlmostEqual(lower, 2.0)
+        self.assertAlmostEqual(upper, 2.0)
+
+    def test_captures_training_seed_variation(self):
+        differences = [
+            [1.0, 1.0, 1.0],
+            [3.0, 3.0, 3.0],
+        ]
+
+        lower, upper = two_way_bootstrap_confidence_interval(
+            differences,
+        )
+
+        self.assertAlmostEqual(lower, 1.0)
+        self.assertAlmostEqual(upper, 3.0)
+
+    def test_captures_trading_day_variation(self):
+        differences = [
+            [1.0, 3.0],
+            [1.0, 3.0],
+        ]
+
+        lower, upper = two_way_bootstrap_confidence_interval(
+            differences,
+        )
+
+        self.assertAlmostEqual(lower, 1.0)
+        self.assertAlmostEqual(upper, 3.0)
+
+    def test_two_way_bootstrap_is_reproducible(self):
+        differences = [
+            [0.5, 1.0, -0.2],
+            [1.4, 0.8, 2.0],
+        ]
+
+        first_interval = two_way_bootstrap_confidence_interval(
+            differences,
+            seed=123,
+        )
+
+        second_interval = two_way_bootstrap_confidence_interval(
+            differences,
+            seed=123,
+        )
+
+        self.assertEqual(first_interval, second_interval)
+
+    def test_rejects_invalid_bootstrap_data(self):
+        invalid_data = [
+            [[1.0, 2.0]],
+            [[1.0], [2.0]],
+            [[1.0, 2.0], [3.0]],
+            [[1.0, float("nan")], [2.0, 3.0]],
+        ]
+
+        for differences in invalid_data:
+            with self.subTest(differences=differences):
+                with self.assertRaises(ValueError):
+                    two_way_bootstrap_confidence_interval(differences)
+
+    def test_rejects_invalid_bootstrap_settings(self):
+        differences = [
+            [1.0, 2.0],
+            [3.0, 4.0],
+        ]
+
+        invalid_settings = [
+            {"confidence_level": 0.0},
+            {"confidence_level": 1.0},
+            {"confidence_level": float("nan")},
+            {"num_samples": 1},
+            {"num_samples": True},
+            {"seed": True},
+        ]
+
+        for settings in invalid_settings:
+            with self.subTest(settings=settings):
+                with self.assertRaises(ValueError):
+                    two_way_bootstrap_confidence_interval(
+                        differences,
+                        **settings,
+                    )
 
 
 if __name__ == "__main__":

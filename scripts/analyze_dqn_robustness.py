@@ -8,6 +8,11 @@ from datetime import date
 from pathlib import Path
 from statistics import mean, stdev
 
+from execai.evaluation.statistics import (
+    DEFAULT_BOOTSTRAP_SAMPLES,
+    two_way_bootstrap_confidence_interval,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = PROJECT_ROOT / "results" / "robustness" / "2025_frozen_dqn.csv"
 DEFAULT_OUTPUT = PROJECT_ROOT / "results" / "analysis"
@@ -189,6 +194,66 @@ def summarize_results(
     return scenario_rows, seed_rows
 
 
+def summarize_paired_intervals(
+    observations: dict[tuple[str, str, str], float],
+    scenarios: tuple[str, ...] = SCENARIOS,
+    training_seeds: tuple[int, ...] = TRAINING_SEEDS,
+    num_samples: int = DEFAULT_BOOTSTRAP_SAMPLES,
+) -> list[dict]:
+    """compares DQN models with baselines across seeds and days"""
+
+    trading_dates = sorted(
+        {
+            trading_date
+            for scenario, trading_date, policy in observations
+            if scenario == scenarios[0] and policy == "TWAP"
+        }
+    )
+
+    comparisons = ("TWAP", "AC Risk-Neutral")
+    summary_rows = []
+
+    for scenario in scenarios:
+        for model in DQN_MODELS:
+            for baseline in comparisons:
+                differences_by_seed = []
+
+                for seed in training_seeds:
+                    policy_name = f"{model} (seed {seed})"
+
+                    daily_differences = [
+                        observations[scenario, trading_date, policy_name]
+                        - observations[scenario, trading_date, baseline]
+                        for trading_date in trading_dates
+                    ]
+
+                    differences_by_seed.append(daily_differences)
+
+                mean_difference = mean(
+                    mean(differences) for differences in differences_by_seed
+                )
+
+                lower, upper = two_way_bootstrap_confidence_interval(
+                    differences_by_seed,
+                    num_samples=num_samples,
+                )
+
+                summary_rows.append(
+                    {
+                        "scenario": scenario,
+                        "model": model,
+                        "baseline": baseline,
+                        "mean_difference_bps": mean_difference,
+                        "ci_lower_bps": lower,
+                        "ci_upper_bps": upper,
+                        "num_seeds": len(training_seeds),
+                        "num_sessions": len(trading_dates),
+                    }
+                )
+
+    return summary_rows
+
+
 def save_csv(output_path: Path, rows: list[dict]) -> None:
     """writes a summary table with consistent column names"""
 
@@ -210,6 +275,7 @@ def main() -> None:
 
     observations = load_results(arguments.input)
     scenario_rows, seed_rows = summarize_results(observations)
+    paired_rows = summarize_paired_intervals(observations)
 
     trading_dates = {
         trading_date
@@ -228,6 +294,11 @@ def main() -> None:
     save_csv(
         arguments.output_dir / "seed_summary.csv",
         seed_rows,
+    )
+
+    save_csv(
+        arguments.output_dir / "paired_intervals.csv",
+        paired_rows,
     )
 
     print(f"Validated {len(observations):,} execution results.")
@@ -250,6 +321,20 @@ def main() -> None:
                 extra = f" | seed SD {row['seed_std_bps']:.4f}"
 
             print(f"  {row['policy']}: {row['mean_shortfall_bps']:.4f} bps{extra}")
+
+    print("\nNominal paired comparisons (exploratory 95% intervals):")
+
+    for row in paired_rows:
+        if row["scenario"] != "nominal":
+            continue
+
+        print(
+            f"{row['model']} minus {row['baseline']}: "
+            f"{row['mean_difference_bps']:+.4f} bps "
+            f"| 95% CI "
+            f"[{row['ci_lower_bps']:+.4f}, "
+            f"{row['ci_upper_bps']:+.4f}]"
+        )
 
 
 if __name__ == "__main__":
