@@ -3,6 +3,7 @@ import csv
 import json
 import math
 
+from collections.abc import Callable
 from datetime import date
 from functools import partial
 from pathlib import Path
@@ -131,6 +132,7 @@ def evaluate_validation_baselines(
     liquidity_aware: bool = False,
     impact_model: str = "linear",
     impact_strength_bps: float = TEMPORARY_IMPACT_BPS,
+    additional_policies: dict[str, Callable[[dict], int]] | None = None,
 ) -> dict[str, dict[date, float]]:
     """evaluates execution baselines on the validation dataset"""
 
@@ -190,6 +192,13 @@ def evaluate_validation_baselines(
             schedule=risk_sensitive_schedule,
         ),
     }
+
+    if additional_policies is not None:
+        for policy_name in additional_policies:
+            if policy_name in policies:
+                raise ValueError(f"Policy already exists: {policy_name}")
+
+        policies.update(additional_policies)
 
     return evaluate_historical_sessions(
         sessions,

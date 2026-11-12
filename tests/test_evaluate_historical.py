@@ -559,6 +559,52 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             high_impact_results["TWAP"][trading_date],
         )
 
+    @patch("scripts.evaluate_historical.evaluate_historical_sessions")
+    @patch("scripts.evaluate_historical.load_dataset_split")
+    def test_supports_additional_execution_policies(
+        self,
+        mock_load_dataset,
+        mock_evaluate_sessions,
+    ):
+        mock_load_dataset.return_value = {}
+
+        calibration = {
+            "training_start": "2023-01-01",
+            "training_end": "2024-12-31",
+            "volatility_per_step": 0.000721,
+            "volume_fractions": [1.0 / 78] * 78,
+        }
+
+        def test_policy(observation):
+            return 0
+
+        with TemporaryDirectory() as directory:
+            calibration_path = Path(directory) / "calibration.json"
+
+            calibration_path.write_text(
+                json.dumps(calibration),
+                encoding="utf-8",
+            )
+
+            evaluate_validation_baselines(
+                Path(directory),
+                calibration_path=calibration_path,
+                liquidity_aware=True,
+                additional_policies={
+                    "Test DQN": test_policy,
+                },
+            )
+
+        policies = mock_evaluate_sessions.call_args.args[3]
+
+        self.assertIs(policies["Test DQN"], test_policy)
+        self.assertIn("TWAP", policies)
+        self.assertIn("AC Risk-Neutral", policies)
+
+        self.assertIsNotNone(
+            mock_evaluate_sessions.call_args.kwargs["liquidity_profile"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,29 @@ class ExecutionEnvironment:
         if liquidity_profile is None:
             liquidity_profile = [1.0] * config.num_time_steps
 
-        if len(liquidity_profile) != config.num_time_steps:
+        self._default_liquidity_profile = self._validate_liquidity_profile(
+            liquidity_profile
+        )
+
+        self._liquidity_profile = self._default_liquidity_profile
+
+        self.inventory = Inventory(config)
+
+        self._prices = []
+        self.current_step = 0
+        self.total_proceeds = 0.0
+        self.total_fees = 0.0
+        self.is_done = True
+
+        self._execution_history: list[ExecutionRecord] = []
+
+    def _validate_liquidity_profile(
+        self,
+        liquidity_profile: list[float],
+    ) -> tuple[float, ...]:
+        """validates and stores a market liquidity profile"""
+
+        if len(liquidity_profile) != self.config.num_time_steps:
             raise ValueError(
                 "Liquidity profile length must match the number of time steps."
             )
@@ -41,18 +63,13 @@ class ExecutionEnvironment:
         ):
             raise ValueError("Relative liquidity must be positive and finite.")
 
-        self._liquidity_profile = tuple(liquidity_profile)
-        self.inventory = Inventory(config)
+        return tuple(liquidity_profile)
 
-        self._prices = []
-        self.current_step = 0
-        self.total_proceeds = 0.0
-        self.total_fees = 0.0
-        self.is_done = True
-
-        self._execution_history: list[ExecutionRecord] = []
-
-    def reset(self, prices: list[float]) -> dict:
+    def reset(
+        self,
+        prices: list[float],
+        liquidity_profile: list[float] | None = None,
+    ) -> dict:
         """starts a new execution episode"""
 
         if len(prices) != self.config.num_time_steps:
@@ -60,6 +77,13 @@ class ExecutionEnvironment:
 
         if any(not math.isfinite(price) or price <= 0 for price in prices):
             raise ValueError("All market prices must be positive and finite.")
+
+        if liquidity_profile is None:
+            selected_profile = self._default_liquidity_profile
+        else:
+            selected_profile = self._validate_liquidity_profile(liquidity_profile)
+
+        self._liquidity_profile = selected_profile
 
         self._prices = list(prices)
         self.inventory.reset()
@@ -79,6 +103,7 @@ class ExecutionEnvironment:
             "time_step": self.current_step,
             "remaining_lots": self.inventory.remaining_lots,
             "market_price": self._prices[self.current_step],
+            "relative_liquidity": self._liquidity_profile[self.current_step],
         }
 
     def step(self, num_lots: int) -> tuple[dict | None, float, bool]:
