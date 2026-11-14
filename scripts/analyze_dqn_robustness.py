@@ -271,7 +271,17 @@ def main() -> None:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
 
+    parser.add_argument(
+        "--expected-sessions",
+        type=int,
+        default=EXPECTED_TRADING_SESSIONS,
+        help="Expected number of historical trading sessions.",
+    )
+
     arguments = parser.parse_args()
+
+    if arguments.expected_sessions < 2:
+        parser.error("Expected sessions must be at least 2.")
 
     observations = load_results(arguments.input)
     scenario_rows, seed_rows = summarize_results(observations)
@@ -283,8 +293,11 @@ def main() -> None:
         if scenario == "nominal" and policy == "TWAP"
     }
 
-    if len(trading_dates) != EXPECTED_TRADING_SESSIONS:
-        raise ValueError("Expected 250 historical validation sessions.")
+    if len(trading_dates) != arguments.expected_sessions:
+        raise ValueError(
+            f"Expected {arguments.expected_sessions} historical sessions, "
+            f"found {len(trading_dates)}."
+        )
 
     save_csv(
         arguments.output_dir / "scenario_summary.csv",
