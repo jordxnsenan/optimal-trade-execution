@@ -71,7 +71,7 @@ class DataStorageTests(unittest.TestCase):
             self.assertFalse(output_path.exists())
 
     def make_complete_session(self) -> list[dict]:
-        """Create a complete regular trading session for testing."""
+        """creates a complete regular trading session for testing"""
 
         session_start = datetime(2025, 10, 15, 13, 30, tzinfo=timezone.utc)
 
@@ -219,7 +219,7 @@ class DataStorageTests(unittest.TestCase):
             checkpoint_path = checkpoint_directory / "2025-10-15.csv"
 
             self.assertFalse(checkpoint_path.exists())
-            
+
 
 if __name__ == "__main__":
     unittest.main()

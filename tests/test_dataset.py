@@ -20,7 +20,7 @@ class HistoricalDatasetTests(unittest.TestCase):
         starting_hour: int,
         num_bars: int,
     ) -> list[dict]:
-        """Generate valid market bars for one trading session."""
+        """generates valid market bars for one trading session"""
 
         session_start = datetime(
             trading_date.year,
@@ -59,7 +59,7 @@ class HistoricalDatasetTests(unittest.TestCase):
             first_bars = self.make_bars(first_date, 13, 78)
             second_bars = self.make_bars(second_date, 13, 78)
 
-            # Save the sessions in reverse order.
+            # saves sessions in reverse order
             save_session_checkpoint(
                 second_bars,
                 second_date,

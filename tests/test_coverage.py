@@ -18,7 +18,7 @@ class DataCoverageTests(unittest.TestCase):
         session_start: datetime,
         num_bars: int,
     ) -> list[dict]:
-        """Create valid five-minute market bars."""
+        """creates valid five-minute market bars"""
 
         bars = []
 
