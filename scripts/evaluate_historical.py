@@ -1,6 +1,5 @@
 import argparse
 import csv
-import json
 import math
 
 from collections.abc import Callable
@@ -11,17 +10,28 @@ from statistics import mean, stdev
 
 from execai.data.dataset import load_dataset_split
 from execai.environment.config import ExecutionConfig
-from execai.environment.costs import ExecutionCostConfig
-from execai.environment.liquidity import build_relative_liquidity_profile
 from execai.evaluation.historical import evaluate_historical_sessions
 from execai.policies.baselines import immediate_action, twap_action
-from execai.data.splits import DEFAULT_SPLITS
 from execai.policies.vwap import build_vwap_schedule, vwap_action
 from execai.policies.schedules import scheduled_action
 from execai.policies.almgren_chriss import (
     calculate_expected_cost_bps,
     calculate_inventory_risk_bps_squared,
     optimize_almgren_chriss_schedule,
+)
+from execai.evaluation.experiment_settings import (
+    AC_RISK_NEUTRAL,
+    AC_RISK_SENSITIVE,
+    FEE_PER_SHARE,
+    HALF_SPREAD_BPS,
+    INVENTORY_LOTS,
+    OPTIMIZATION_REFERENCE_PRICE,
+    ORDER_SHARES,
+    TEMPORARY_IMPACT_BPS,
+    TIME_STEPS,
+    build_evaluation_settings,
+    build_experiment_liquidity_profile,
+    load_training_calibration,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -46,48 +56,6 @@ SQUARE_ROOT_LIQUIDITY_AWARE_OUTPUT_PATH = (
 )
 
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
-ORDER_SHARES = 10_000
-TIME_STEPS = 12
-INVENTORY_LOTS = 20
-
-HALF_SPREAD_BPS = 5.0
-TEMPORARY_IMPACT_BPS = 20.0
-FEE_PER_SHARE = 0.01
-
-AC_RISK_NEUTRAL = 0.0
-AC_RISK_SENSITIVE = 0.05
-OPTIMIZATION_REFERENCE_PRICE = 100.0
-
-
-def load_training_calibration(calibration_path: Path) -> dict:
-    """loads calibration parameters derived from the training period"""
-
-    calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
-
-    training_range = DEFAULT_SPLITS.training
-
-    if calibration.get("training_start") != str(
-        training_range.start_date
-    ) or calibration.get("training_end") != str(training_range.end_date):
-        raise ValueError("Calibration must use the defined training period.")
-
-    return calibration
-
-
-def build_experiment_liquidity_profile(
-    config: ExecutionConfig,
-    calibration: dict,
-    liquidity_aware: bool,
-) -> list[float] | None:
-    """returns forecast liquidity when enabled for an experiment"""
-
-    if not liquidity_aware:
-        return None
-
-    return build_relative_liquidity_profile(
-        calibration["volume_fractions"],
-        config,
-    )
 
 
 def load_vwap_schedule(
@@ -102,28 +70,6 @@ def load_vwap_schedule(
         config,
         calibration["volume_fractions"],
     )
-
-
-def build_evaluation_settings(
-    impact_model: str = "linear",
-    impact_strength_bps: float = TEMPORARY_IMPACT_BPS,
-) -> tuple[ExecutionConfig, ExecutionCostConfig]:
-    """creates the execution settings shared by historical experiments"""
-
-    config = ExecutionConfig(
-        total_shares=ORDER_SHARES,
-        num_time_steps=TIME_STEPS,
-        num_lots=INVENTORY_LOTS,
-    )
-
-    cost_config = ExecutionCostConfig(
-        half_spread_bps=HALF_SPREAD_BPS,
-        temporary_impact_bps=impact_strength_bps,
-        fee_per_share=FEE_PER_SHARE,
-        impact_model=impact_model,
-    )
-
-    return config, cost_config
 
 
 def evaluate_validation_baselines(
