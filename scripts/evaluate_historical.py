@@ -4,16 +4,14 @@ import math
 
 from collections.abc import Callable
 from datetime import date
-from functools import partial
 from pathlib import Path
 from statistics import mean, stdev
 
 from execai.data.dataset import load_dataset_split
 from execai.environment.config import ExecutionConfig
+from execai.evaluation.baseline_policies import build_baseline_policies
 from execai.evaluation.historical import evaluate_historical_sessions
-from execai.policies.baselines import immediate_action, twap_action
-from execai.policies.vwap import build_vwap_schedule, vwap_action
-from execai.policies.schedules import scheduled_action
+from execai.policies.vwap import build_vwap_schedule
 from execai.policies.almgren_chriss import (
     calculate_expected_cost_bps,
     calculate_inventory_risk_bps_squared,
@@ -100,44 +98,12 @@ def evaluate_validation_baselines(
         liquidity_aware,
     )
 
-    vwap_schedule = build_vwap_schedule(
-        config,
-        calibration["volume_fractions"],
-    )
-
-    volatility = calibration["volatility_per_step"]
-
-    risk_neutral_schedule = optimize_almgren_chriss_schedule(
+    policies = build_baseline_policies(
         config,
         cost_config,
-        reference_price=OPTIMIZATION_REFERENCE_PRICE,
-        volatility_per_step=volatility,
-        risk_aversion=AC_RISK_NEUTRAL,
-        liquidity_profile=liquidity_profile,
+        calibration,
+        liquidity_profile,
     )
-
-    risk_sensitive_schedule = optimize_almgren_chriss_schedule(
-        config,
-        cost_config,
-        reference_price=OPTIMIZATION_REFERENCE_PRICE,
-        volatility_per_step=volatility,
-        risk_aversion=AC_RISK_SENSITIVE,
-        liquidity_profile=liquidity_profile,
-    )
-
-    policies = {
-        "Immediate": immediate_action,
-        "TWAP": partial(twap_action, config=config),
-        "VWAP": partial(vwap_action, schedule=vwap_schedule),
-        "AC Risk-Neutral": partial(
-            scheduled_action,
-            schedule=risk_neutral_schedule,
-        ),
-        "AC Risk-Sensitive": partial(
-            scheduled_action,
-            schedule=risk_sensitive_schedule,
-        ),
-    }
 
     if additional_policies is not None:
         for policy_name in additional_policies:

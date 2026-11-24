@@ -9,12 +9,9 @@ from statistics import mean
 from execai.agents.checkpoints import load_dqn_checkpoint
 from execai.data.dataset import load_dataset_split
 from execai.environment.liquidity import build_relative_liquidity_profile
+from execai.evaluation.baseline_policies import build_baseline_policies
 from execai.evaluation.robustness import evaluate_frozen_scenario
 from execai.evaluation.statistics import paired_bootstrap_confidence_interval
-from execai.policies.almgren_chriss import optimize_almgren_chriss_schedule
-from execai.policies.baselines import immediate_action, twap_action
-from execai.policies.schedules import scheduled_action
-from execai.policies.vwap import build_vwap_schedule, vwap_action
 
 from scripts.evaluate_historical import (
     AC_RISK_NEUTRAL,
@@ -68,42 +65,12 @@ def build_frozen_policies(
 ):
     """builds nominal baselines and load selected DQN checkpoints"""
 
-    vwap_schedule = build_vwap_schedule(
-        config,
-        calibration["volume_fractions"],
-    )
-
-    risk_neutral_schedule = optimize_almgren_chriss_schedule(
+    policies = build_baseline_policies(
         config,
         nominal_cost_config,
-        reference_price=OPTIMIZATION_REFERENCE_PRICE,
-        volatility_per_step=calibration["volatility_per_step"],
-        risk_aversion=AC_RISK_NEUTRAL,
-        liquidity_profile=forecast_liquidity,
+        calibration,
+        forecast_liquidity,
     )
-
-    risk_sensitive_schedule = optimize_almgren_chriss_schedule(
-        config,
-        nominal_cost_config,
-        reference_price=OPTIMIZATION_REFERENCE_PRICE,
-        volatility_per_step=calibration["volatility_per_step"],
-        risk_aversion=AC_RISK_SENSITIVE,
-        liquidity_profile=forecast_liquidity,
-    )
-
-    policies = {
-        "Immediate": immediate_action,
-        "TWAP": partial(twap_action, config=config),
-        "VWAP": partial(vwap_action, schedule=vwap_schedule),
-        "AC Risk-Neutral": partial(
-            scheduled_action,
-            schedule=risk_neutral_schedule,
-        ),
-        "AC Risk-Sensitive": partial(
-            scheduled_action,
-            schedule=risk_sensitive_schedule,
-        ),
-    }
 
     checkpoint_metadata = {}
 
