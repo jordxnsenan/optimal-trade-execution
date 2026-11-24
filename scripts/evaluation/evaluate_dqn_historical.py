@@ -7,13 +7,14 @@ from statistics import mean
 from execai.agents.checkpoints import load_dqn_checkpoint
 from execai.evaluation.statistics import paired_bootstrap_confidence_interval
 
-from scripts.evaluate_historical import (
+from scripts.evaluation.evaluate_historical import (
     CHECKPOINT_DIRECTORY,
     build_evaluation_settings,
     evaluate_validation_baselines,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 MODEL_DIRECTORY = PROJECT_ROOT / "results" / "models"
 
 DEFAULT_SEED = 42

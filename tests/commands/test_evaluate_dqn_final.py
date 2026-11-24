@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.evaluate_dqn_final import (
+from scripts.evaluation.evaluate_dqn_final import (
     load_evaluation_sessions,
     run_final_evaluation,
 )
@@ -12,7 +12,7 @@ from scripts.evaluate_dqn_final import (
 
 class FinalDQNEvaluationTests(unittest.TestCase):
 
-    @patch("scripts.evaluate_dqn_final.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_dataset_split")
     def test_validation_does_not_require_confirmation(self, mock_load):
         mock_load.return_value = {index: [] for index in range(250)}
 
@@ -23,7 +23,7 @@ class FinalDQNEvaluationTests(unittest.TestCase):
         mock_load.assert_called_once()
         self.assertEqual(mock_load.call_args.args[1], "validation")
 
-    @patch("scripts.evaluate_dqn_final.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_dataset_split")
     def test_held_out_requires_confirmation(self, mock_load):
         with self.assertRaisesRegex(
             PermissionError,
@@ -34,7 +34,7 @@ class FinalDQNEvaluationTests(unittest.TestCase):
         # ensures the test dataset is never be loaded without confirmation
         mock_load.assert_not_called()
 
-    @patch("scripts.evaluate_dqn_final.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_dataset_split")
     def test_confirmed_held_out_uses_test_split(self, mock_load):
         mock_load.return_value = {index: [] for index in range(187)}
 
@@ -46,7 +46,7 @@ class FinalDQNEvaluationTests(unittest.TestCase):
         self.assertEqual(len(sessions), 187)
         self.assertEqual(mock_load.call_args.args[1], "test")
 
-    @patch("scripts.evaluate_dqn_final.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_dataset_split")
     def test_rejects_incomplete_dataset(self, mock_load):
         mock_load.return_value = {index: [] for index in range(100)}
 
@@ -56,7 +56,7 @@ class FinalDQNEvaluationTests(unittest.TestCase):
         ):
             load_evaluation_sessions("validation")
 
-    @patch("scripts.evaluate_dqn_final.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_dataset_split")
     def test_rejects_unknown_split(self, mock_load):
         with self.assertRaisesRegex(
             ValueError,
@@ -66,7 +66,7 @@ class FinalDQNEvaluationTests(unittest.TestCase):
 
         mock_load.assert_not_called()
 
-    @patch("scripts.evaluate_dqn_final.load_evaluation_sessions")
+    @patch("scripts.evaluation.evaluate_dqn_final.load_evaluation_sessions")
     def test_does_not_overwrite_held_out_results(self, mock_load):
         with TemporaryDirectory() as directory:
             output_path = Path(directory) / "final_results.csv"

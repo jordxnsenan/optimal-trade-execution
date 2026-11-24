@@ -7,8 +7,8 @@ from pathlib import Path
 from execai.agents.checkpoints import load_dqn_checkpoint
 from execai.environment.config import ExecutionConfig
 
-from scripts.analyze_dqn_robustness import TRAINING_SEEDS
-from scripts.evaluate_historical import (
+from scripts.analysis.analyze_dqn_robustness import TRAINING_SEEDS
+from scripts.evaluation.evaluate_historical import (
     PROJECT_ROOT,
     build_evaluation_settings,
 )

@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.compare_historical import compare_baselines
+from scripts.evaluation.compare_historical import compare_baselines
 
 
 class HistoricalComparisonTests(unittest.TestCase):

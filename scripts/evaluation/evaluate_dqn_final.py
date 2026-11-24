@@ -10,14 +10,14 @@ import torch
 from execai.data.dataset import load_dataset_split
 from execai.environment.liquidity import build_relative_liquidity_profile
 
-from scripts.analyze_dqn_robustness import TRAINING_SEEDS
-from scripts.evaluate_dqn_robustness import (
+from scripts.analysis.analyze_dqn_robustness import TRAINING_SEEDS
+from scripts.evaluation.evaluate_dqn_robustness import (
     ROBUSTNESS_SCENARIOS,
     build_frozen_policies,
     run_robustness_scenarios,
     save_robustness_results,
 )
-from scripts.evaluate_historical import (
+from scripts.evaluation.evaluate_historical import (
     CALIBRATION_PATH,
     CHECKPOINT_DIRECTORY,
     PROJECT_ROOT,

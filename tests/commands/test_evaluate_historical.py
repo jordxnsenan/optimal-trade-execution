@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.evaluate_historical import (
+from scripts.evaluation.evaluate_historical import (
     evaluate_validation_baselines,
     save_daily_results,
     summarize_almgren_chriss_risk,
@@ -52,8 +52,8 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             },
         }
 
-    @patch("scripts.evaluate_historical.evaluate_historical_sessions")
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.evaluate_historical_sessions")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_evaluation_uses_validation_data(
         self,
         mock_load,
@@ -161,7 +161,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
 
     def test_rejects_vwap_calibration_from_wrong_period(self):
         from execai.environment.config import ExecutionConfig
-        from scripts.evaluate_historical import load_vwap_schedule
+        from scripts.evaluation.evaluate_historical import load_vwap_schedule
 
         config = ExecutionConfig(
             total_shares=10_000,
@@ -189,7 +189,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
                     calibration_path,
                 )
 
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_almgren_chriss_baselines_on_flat_market(self, mock_load):
         mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
 
@@ -266,7 +266,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             neutral["comparison_objective_bps"],
         )
 
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_liquidity_aware_evaluation_reoptimizes_ac(self, mock_load):
         mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
 
@@ -399,7 +399,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
 
         self.assertEqual(len(output_paths), 4)
 
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_square_root_model_is_used_in_historical_evaluation(
         self,
         mock_load,
@@ -511,7 +511,7 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             3,
         )
 
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_impact_strength_changes_execution_costs(self, mock_load):
         mock_load.return_value = {self.first_date: [{"c": 100.0} for _ in range(78)]}
 
@@ -559,8 +559,8 @@ class HistoricalEvaluationScriptTests(unittest.TestCase):
             high_impact_results["TWAP"][trading_date],
         )
 
-    @patch("scripts.evaluate_historical.evaluate_historical_sessions")
-    @patch("scripts.evaluate_historical.load_dataset_split")
+    @patch("scripts.evaluation.evaluate_historical.evaluate_historical_sessions")
+    @patch("scripts.evaluation.evaluate_historical.load_dataset_split")
     def test_supports_additional_execution_policies(
         self,
         mock_load_dataset,

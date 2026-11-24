@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.diagnose_dqn_liquidity import track_policy_actions
+from scripts.analysis.diagnose_dqn_liquidity import track_policy_actions
 
 
 class DQNLiquidityDiagnosticTests(unittest.TestCase):

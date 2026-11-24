@@ -4,7 +4,7 @@ import torch
 from functools import partial
 from unittest.mock import patch
 
-from scripts.benchmark_dqn import (
+from scripts.training.benchmark_dqn import (
     build_benchmark_config,
     run_execution_episode,
 )

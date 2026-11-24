@@ -14,7 +14,7 @@ from execai.evaluation.runner import run_policy
 from execai.policies.baselines import immediate_action, twap_action
 
 CHECKPOINT_DIRECTORY = (
-    Path(__file__).resolve().parents[1] / "data" / "raw" / "SPY_5min_SIP"
+    Path(__file__).resolve().parents[2] / "data" / "raw" / "SPY_5min_SIP"
 )
 
 

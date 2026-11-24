@@ -27,9 +27,9 @@ from execai.policies.baselines import immediate_action, twap_action
 from execai.policies.schedules import scheduled_action
 from execai.policies.vwap import build_vwap_schedule, vwap_action
 
-from scripts.compare_dqn_synthetic import evaluate_policies
+from scripts.training.compare_dqn_synthetic import evaluate_policies
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
 
 DEFAULT_EPISODES = 2000

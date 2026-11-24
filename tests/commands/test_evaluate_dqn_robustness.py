@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.evaluate_dqn_robustness import (
+from scripts.evaluation.evaluate_dqn_robustness import (
     ROBUSTNESS_SCENARIOS,
     get_scenario_liquidity_profile,
     run_robustness_scenarios,
@@ -44,7 +44,7 @@ class DQNRobustnessScriptTests(unittest.TestCase):
             "Immediate": immediate_policy,
         }
 
-    @patch("scripts.evaluate_dqn_robustness.evaluate_frozen_scenario")
+    @patch("scripts.evaluation.evaluate_dqn_robustness.evaluate_frozen_scenario")
     def test_reuses_frozen_policies_across_scenarios(self, mock_evaluate):
         mock_evaluate.return_value = {"Immediate": {self.trading_date: 26.0}}
 
@@ -193,7 +193,7 @@ class DQNRobustnessScriptTests(unittest.TestCase):
         self.assertEqual(result, forecast)
         self.assertIsNot(result, forecast)
 
-    @patch("scripts.evaluate_dqn_robustness.evaluate_frozen_scenario")
+    @patch("scripts.evaluation.evaluate_dqn_robustness.evaluate_frozen_scenario")
     def test_late_liquidity_is_forwarded_to_evaluation(
         self,
         mock_evaluate,

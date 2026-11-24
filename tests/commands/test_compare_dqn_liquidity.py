@@ -4,12 +4,12 @@ import unittest
 
 from functools import partial
 from unittest.mock import patch
-from scripts.compare_dqn_liquidity import (
+from scripts.training.compare_dqn_liquidity import (
     average_actions_by_step,
     generate_market_scenarios,
     train_agent,
 )
-from scripts.compare_dqn_synthetic import evaluate_policies
+from scripts.training.compare_dqn_synthetic import evaluate_policies
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig
 from execai.environment.simulator import ExecutionEnvironment
@@ -209,8 +209,8 @@ class LiquidityDQNComparisonTests(unittest.TestCase):
 
         self.assertEqual(average_actions, [2.0, 2.0])
 
-    @patch("scripts.compare_dqn_liquidity.evaluate_policies")
-    @patch("scripts.compare_dqn_liquidity.train_dqn")
+    @patch("scripts.training.compare_dqn_liquidity.evaluate_policies")
+    @patch("scripts.training.compare_dqn_liquidity.train_dqn")
     def test_training_restores_best_validation_checkpoint(
         self,
         mock_train_dqn,

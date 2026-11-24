@@ -13,7 +13,8 @@ from execai.evaluation.statistics import (
     two_way_bootstrap_confidence_interval,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 DEFAULT_INPUT = PROJECT_ROOT / "results" / "robustness" / "2025_frozen_dqn.csv"
 DEFAULT_OUTPUT = PROJECT_ROOT / "results" / "analysis"
 

@@ -13,7 +13,7 @@ from execai.evaluation.baseline_policies import build_baseline_policies
 from execai.evaluation.robustness import evaluate_frozen_scenario
 from execai.evaluation.statistics import paired_bootstrap_confidence_interval
 
-from scripts.evaluate_historical import (
+from scripts.evaluation.evaluate_historical import (
     AC_RISK_NEUTRAL,
     AC_RISK_SENSITIVE,
     CALIBRATION_PATH,

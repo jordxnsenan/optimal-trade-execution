@@ -4,7 +4,7 @@ import torch
 from functools import partial
 from unittest.mock import patch
 
-from scripts.compare_dqn_synthetic import evaluate_policies
+from scripts.training.compare_dqn_synthetic import evaluate_policies
 from execai.agents.dqn import DQNAgent
 from execai.environment.config import ExecutionConfig
 from execai.environment.costs import ExecutionCostConfig

@@ -11,13 +11,13 @@ matplotlib.use("Agg")
 
 from pathlib import Path
 from statistics import mean, stdev
-from scripts.analyze_dqn_robustness import (
+from scripts.analysis.analyze_dqn_robustness import (
     DQN_MODELS,
     SCENARIOS,
     TRAINING_SEEDS,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_INPUT_DIR = PROJECT_ROOT / "results" / "analysis"
 DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "figures"
@@ -137,7 +137,7 @@ def plot_nominal_training_seeds(
     axis.set_xticks(x_positions)
     axis.set_xticklabels([str(seed) for seed in TRAINING_SEEDS])
 
-    axis.set_title("DQN Historical Validation Across Training Seeds")
+    axis.set_title("DQN Historical Performance Across Training Seeds")
     axis.set_xlabel("Training seed")
     axis.set_ylabel("Mean implementation shortfall (bps)")
     axis.grid(axis="y", alpha=0.2)

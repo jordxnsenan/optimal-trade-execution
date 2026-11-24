@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from execai.data.ingestion import TradingSessionResult
 from execai.data.storage import save_session_checkpoint
-from scripts.download_market_data import download_and_save_sessions
+from scripts.data.download_market_data import download_and_save_sessions
 
 
 class MarketDataDownloadTests(unittest.TestCase):
@@ -39,7 +39,7 @@ class MarketDataDownloadTests(unittest.TestCase):
 
         return bars
 
-    @patch("scripts.download_market_data.iter_spy_sessions")
+    @patch("scripts.data.download_market_data.iter_spy_sessions")
     def test_saves_downloaded_session(self, mock_sessions):
         bars = self.make_bars()
 
@@ -71,7 +71,7 @@ class MarketDataDownloadTests(unittest.TestCase):
                 ["2025-10-15"],
             )
 
-    @patch("scripts.download_market_data.iter_spy_sessions")
+    @patch("scripts.data.download_market_data.iter_spy_sessions")
     def test_skips_existing_checkpoint(self, mock_sessions):
         with TemporaryDirectory() as directory:
             checkpoint_directory = Path(directory)
@@ -104,7 +104,7 @@ class MarketDataDownloadTests(unittest.TestCase):
                 {self.trading_date},
             )
 
-    @patch("scripts.download_market_data.iter_spy_sessions")
+    @patch("scripts.data.download_market_data.iter_spy_sessions")
     def test_records_rejected_session(self, mock_sessions):
         mock_sessions.return_value = iter(
             [
@@ -134,7 +134,7 @@ class MarketDataDownloadTests(unittest.TestCase):
 
             self.assertFalse((checkpoint_directory / "2025-10-15.csv").exists())
 
-    @patch("scripts.download_market_data.iter_spy_sessions")
+    @patch("scripts.data.download_market_data.iter_spy_sessions")
     def test_preserves_checkpoint_after_api_failure(self, mock_sessions):
         def failing_download(*args, **kwargs):
             yield TradingSessionResult(

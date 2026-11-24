@@ -21,7 +21,7 @@ from execai.policies.schedules import scheduled_action
 from execai.policies.vwap import build_vwap_schedule, vwap_action
 from execai.evaluation.statistics import paired_bootstrap_confidence_interval
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CALIBRATION_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"
 
 DEFAULT_EPISODES = 2000

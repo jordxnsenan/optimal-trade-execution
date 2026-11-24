@@ -10,14 +10,14 @@ from execai.data.dataset import load_dataset_split
 from execai.environment.liquidity import build_relative_liquidity_profile
 from execai.evaluation.robustness import evaluate_frozen_scenario
 
-from scripts.evaluate_historical import (
+from scripts.evaluation.evaluate_historical import (
     CALIBRATION_PATH,
     CHECKPOINT_DIRECTORY,
     PROJECT_ROOT,
     build_evaluation_settings,
     load_training_calibration,
 )
-from scripts.evaluate_dqn_robustness import build_frozen_policies
+from scripts.evaluation.evaluate_dqn_robustness import build_frozen_policies
 
 DIAGNOSTIC_SEEDS = (1001, 4096)
 
