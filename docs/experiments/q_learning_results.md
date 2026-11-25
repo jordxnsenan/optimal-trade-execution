@@ -1,249 +1,199 @@
 # Tabular Q-Learning: Experimental Results
 
-## Introduction
+## Overview
 
-This report covers the implementation and testing of tabular Q-learning for ExecAI which is focused on optimal trade execution. The idea behind the project is to train an agent to decide how much of a stock order to sell at different points in time, with the goal of keeping execution costs minimal.
+I started the reinforcement learning implementation with tabular Q-learning. The goal was to train an agent to decide how much of a stock order to sell at each interval while minimizing execution costs.
 
-The agent learns by interacting with a simulated market. At each time step it chooses how many shares to sell and receives a reward based on the resulting execution cost. Over many episodes, it updates its Q-values and gradually learns which decisions tend to produce better outcomes.
+I wanted to establish that the learning algorithm worked on a problem with a known optimal solution before attempting the full 10,000-share execution task. I also wanted to see how well Q-learning would handle a longer execution window where the consequences of an early trading decision might only become apparent several steps later.
 
-I started with a fairly small execution problem to make sure the learning algorithm worked correctly before moving to the full-sized environment. I was also interested in seeing how well tabular Q-learning would scale, especially since the number of possible trading decisions increases quite a bit as the order size and execution window get larger.
+I compared the learned policies against Immediate Execution and Time-Weighted Average Price (TWAP). Both strategies use the same simulator and execution-cost assumptions as the Q-learning agent.
 
-To measure performance, I compared the agent against two basic execution strategies. The first was Immediate Execution which sells the entire order at once. The second was Time-Weighted Average Price (TWAP) which spreads the order across the available time intervals.
-
-Both baselines use the same trading simulator as the Q-learning agent, so execution costs are calculated consistently.
-
-The results discussed here are from the development stage of the project. A separate set of market scenarios will be used for the final evaluation.
+The experiments documented here were conducted during the early development stage. They use synthetic market scenarios and are separate from the later DQN experiments and historical evaluations.
 
 ## Experimental Setup
 
-### Trading Environment
+### Execution Environment
 
-I used two different execution configurations for these experiments. The smaller version was mainly for checking whether the agent could learn a known optimal solution. The larger version represents the execution problem I intend to use for the main project.
+I used two execution configurations:
 
-| Parameter      | Small Benchmark | Full-Size Problem |
-|----------------|-----------------|-------------------|
-| Order size     | 400 shares      | 10,000 shares     |
-| Time steps     | 3               | 12                |
-| Inventory lots | 4               | 20                |
-| Shares per lot | 100             | 500               |
-| Starting price | $100            | $100              |
+| Parameter          | Small Benchmark | Full-Size Problem |
+| ------------------ | --------------: | ----------------: |
+| Order size         |      400 shares |     10,000 shares |
+| Decision intervals |               3 |                12 |
+| Inventory lots     |               4 |                20 |
+| Shares per lot     |             100 |               500 |
+| Starting price     |            $100 |              $100 |
 
-In the full-sized environment each time step represents five minutes which gives the agent one hour to complete the order.
+In the full-sized environment, each decision represents a five-minute interval, giving the agent one hour to complete the order.
 
-The agent chooses how many inventory lots to sell at each step. It can also choose to wait, although it cannot sell more shares than it has remaining. If the deadline is reached before the order is complete, the simulator automatically executes whatever inventory is left. The purpose of this is to ensures that every strategy completes the same total order, even if its trading decisions are different.
+The agent selects how many inventory lots to sell at each step. It can choose to wait, but it cannot sell more shares than it has remaining. Any inventory left at the final decision must be executed.
 
-### Execution Costs
+The simulator includes a transaction-cost model with the following settings:
 
-The simulator includes a simplified transaction-cost model. Selling shares incurs a half-spread cost and larger trades experience greater temporary market impact. There is also a fixed fee for each share sold.
-
-For the initial experiments, I used the following values:
-
-| Parameter                    | Value           |
-|------------------------------|-----------------|
-| Half-spread                  | 5 basis points  |
+| Parameter                    |           Value |
+| ---------------------------- | --------------: |
+| Half-spread                  |  5 basis points |
 | Temporary impact coefficient | 20 basis points |
 | Transaction fee              | $0.01 per share |
 
-Temporary impact depends on how much of the original order is executed in a single trade. This means selling a large portion of the order at once is generally more expensive than dividing it into smaller trades assuming the market price stays the same.
+Larger trades incur greater temporary market impact. When prices remain constant, distributing the order across multiple intervals generally reduces execution costs.
 
-I measured execution performance using implementation shortfall expressed in basis points. It measures the difference between the value of the order at the starting price and the net proceeds received from executing it. A lower value means the strategy achieved a better execution result.
+I measured performance using implementation shortfall in basis points. This measures the difference between the order's value at the initial market price and the net proceeds received after execution. Lower shortfall indicates better performance.
 
-### Q-Learning Agent
+### Q-Learning Implementation
 
-For the first version of Q-learning I kept the state representation simple. Each state contains the current time step and the number of inventory lots remaining.
+I represented each state using the current time step and the number of inventory lots remaining.
 
-The available actions are the different quantities of inventory the agent can sell. These are restricted to prevent the agent from executing more shares than it has available. At the final step, the agent must sell its remaining inventory.
-
-I implemented the Q-table using Python dictionaries with Q-values initially set to zero. The agent uses epsilon-greedy action selection during training, allowing it to explore different trades while gradually placing more weight on what it has learned.
+The Q-table stores the estimated value of selling a particular quantity from each state. I implemented it using Python dictionaries with Q-values initially set to zero. During training, the agent uses epsilon-greedy action selection to explore different trades while gradually relying more on its learned estimates.
 
 The initial training settings were:
 
-| Hyperparameter            | Value          |
-|---------------------------|----------------|
-| Learning rate             | 0.1            |
-| Discount factor           | 1.0            |
-| Initial exploration rate  | 1.0            |
-| Final exploration rate    | 0.1            |
-| Exploration schedule      | Linear decay   |
-| Action selection          | Epsilon-greedy |
+| Hyperparameter           | Value  |
+| ------------------------ | ------ |
+| Learning rate            | 0.1    |
+| Discount factor          | 1.0    |
+| Initial exploration rate | 1.0    |
+| Final exploration rate   | 0.1    |
+| Exploration decay        | Linear |
 
-I used a discount factor of 1.0 because the agent has a fixed execution deadline and the objective is to minimize the total cost of completing the order.
+I used a discount factor of 1.0 because the objective is to minimize the total execution cost over a fixed number of decisions. The state representation was deliberately simple. The agent could learn how to distribute inventory over time but it could not directly respond to changes in market prices or volatility.
 
-One limitation I found with this first implementation is that the state does not contain the current market price or volatility. The agent can learn how to distribute trades based on time and remaining inventory but its decisions cannot directly respond to changes in market conditions. I wanted to establish how well this simpler version worked before adding more information to the state.
-
-### Training and Evaluation
-
-The experiments use both constant-price markets and randomly generated price paths. Synthetic price movements are produced using a seeded geometric Brownian motion model which allows the same experiments to be reproduced.
-
-The constant-price environment is especially useful because the optimal execution schedule can be calculated independently. This gives me a way to check whether the Q-learning agent is learning reasonable decisions.
-
-For the stochastic experiments, I generated separate market paths for training and evaluation. Each strategy was evaluated using the same price paths so that differences in performance could be compared directly.
-
-I also trained multiple agents using different random seeds to investigate whether the results were consistent across training runs.
-
-Since some of these evaluation scenarios have already been used while developing and adjusting the agent, I am treating them as validation data. My final evaluation will use new, untouched scenarios.
+For the stochastic experiments, I generated synthetic price paths using a seeded geometric Brownian motion model. Training and evaluation used separate paths, with every strategy evaluated on the same market scenarios.
 
 ## Small Deterministic Benchmark
 
-### Experiment
+I began with the 400-share execution problem. The order was divided into four lots with three decisions available. Market prices remained constant at $100.
 
-The first experiment was designed to check whether Q-learning could learn an optimal trading schedule in a simple environment.
-
-I used an order of 400 shares divided into four lots with three time steps available to complete the execution. The market price stayed constant at $100 throughout each episode.
-
-The agent was trained for 5,000 episodes using random seed 42.
-
-Because the price did not change the main factor separating the strategies was how they distributed their trades. Larger trades produced greater temporary impact so spreading execution across the available intervals should reduce costs.
-
-Before training the agent I had already implemented an exhaustive-search test that calculated the cost of every possible complete execution schedule in this environment.
-
-That test established a minimum execution cost of **13.5 basis points**. It also confirmed that several different schedules could achieve the same result.
+Before training Q-learning, I used exhaustive search to calculate the execution cost of every valid schedule. The minimum was **13.5 basis points**, with several different schedules achieving that result. I trained the agent for 5,000 episodes using random seed 42.
 
 ### Results
 
-After training, I evaluated the learned Q-learning policy against Immediate Execution and TWAP.
+| Strategy            | Execution Schedule       | Shortfall |
+| ------------------- | ------------------------ | --------: |
+| Immediate Execution | [400]                    |  26.0 bps |
+| TWAP                | [200, 100, 100]          |  13.5 bps |
+| Q-Learning          | [100, 100, 200]          |  13.5 bps |
+| Known optimum       | Multiple valid schedules |  13.5 bps |
 
-| Strategy            | Execution Schedule (Shares) | Shortfall |
-|---------------------|-----------------------------|-----------|
-| Immediate Execution | [400]                       | 26.0 bps  |
-| TWAP                | [200, 100, 100]             | 13.5 bps  |
-| Q-Learning          | [100, 100, 200]             | 13.5 bps  |
-| Known Optimum       | Multiple valid schedules    | 13.5 bps  |
+Q-learning matched the independently calculated optimal cost. Its schedule differed from TWAP but both distributed the order efficiently enough to achieve the same result.
 
-The Q-learning agent learned to sell 100 shares during each of the first two intervals, leaving 200 shares for the final interval.
+This gave me a useful check of the learning implementation. The agent had learned an optimal schedule through repeated interaction with the simulator and the Q-value updates were also passing their unit tests.
 
-This schedule was different from TWAP, which executed 200 shares immediately and then sold 100 shares in each remaining interval. Despite the difference, both strategies achieved the same execution cost.
-
-The learned policy matched the minimum cost that had been established through exhaustive search.
-
-### Discussion
-
-I found thiss initial result to be interesting because it showed that the Q-learning implementation was capable of learning a sensible execution strategy. The agent had no built-in knowledge of TWAP or the optimal schedule. It arrived at its decisions through repeated interaction with the simulator.
-
-The result also gave me more confidence in the learning process. The Q-value updates were working as expected in the unit tests and the agent was now able to produce an optimal policy in a complete execution episode.
-
-A clear limitation that I discovered with this approach was that the problem is relatively predictable with a constant market price and the same liquidity assumptions at every step as the agent only needs to learn how to distribute its inventory efficiently.
-
-Matching TWAP in this setting was useful as a starting point but it does not tell me much about how the agent will behave in a changing market.
-
-For the next experiments I intend on using randomly generated prices and a larger execution problem. I wnat to see whether the agent can maintain similar performance once it had more decisions to make and the consequences of those decisions became harder to learn.
+The constant-price environment was relatively predictable. I continued with the full-sized problem to investigate whether the same approach could learn effective decisions over a longer execution window.
 
 ## Full-Size Q-Learning Experiments
 
-### Scaling Up the Execution Problem
+### Initial Training
 
-After getting Q-learning working in the smaller environment I moved on to the full-sized execution problem. This involved selling 10,000 shares over twelve time steps where the order was divided into twenty inventory lots.
+I increased the order size to 10,000 shares which was divided into 20 lots over twelve decisions.
 
-The main difference was the number of possible decisions the agent had to learn. In the smaller environment, there were only four lots and three time steps, meaning that the the agent had relatively few trading schedules to consider. With twenty lots and twelve steps, there are considerably more state-action combinations. The agent also needs to learn how decisions made early in the episode affect the execution cost later on.
+The larger problem introduced many more possible state-action combinations. A decision to wait also meant that the agent had less time to sell its remaining inventory, potentially increasing the cost of later trades.
 
-I initially trained the agent using 5,000 episodes with randomly generated market prices. I used five different agent seeds to see whether training produced similar results across independent runs. Each agent was evaluated on the same 500 synthetic validation paths.
+I initially trained five agents for 5,000 episodes each using different random seeds. The experiments used synthetic price paths with a volatility setting of 0.002 per time step. All five agents were evaluated on the same 500 validation paths.
 
-The results were noticeably worse than those from the small benchmark. Although the agent was able to complete every order, many of its learned schedules involved waiting through most of the execution window before selling large quantities of shares which was expensive because of the temporary market-impact model.
+TWAP achieved an average implementation shortfall of **8.2047 bps**, while Immediate Execution cost 26.0 bps.
 
-For comparison, TWAP achieved an average implementation shortfall of 8.2047 basis points on these validation paths and Immediate Execution cost 26.0 basis points.
-
-The initial Q-learning agents were consistently worse than TWAP. Some learned schedules placed several thousand shares into a single trading interval, even though spreading those trades would have reduced their impact costs in a constant-price market.
+The Q-learning agents performed considerably worse than TWAP. Several learned schedules involved waiting through much of the execution window before selling large portions of the order. These concentrated trades incurred higher temporary market-impact costs.
 
 ### Increasing the Training Budget
 
-My first thought was that the agent might need more training to learn the larger state-action space properly. I compared training runs using 5,000 and 20,000 episodes per agent. Both experiments used the same initial market-path seed ranges along with the existing learning rate and exploration settings.
+I repeated the experiment using 20,000 training episodes per agent to see whether additional experience would improve the learned schedules.
 
 | Training Episodes | Mean Difference from TWAP |
-|-------------------|---------------------------|
-| 5,000             | +8.5917 bps               |
-| 20,000            | +8.0659 bps               |
+| ----------------- | ------------------------: |
+| 5,000             |               +8.5917 bps |
+| 20,000            |               +8.0659 bps |
 
-Increasing the number of episodes produced a small improvement in the average result but the learned schedules were still inefficient. There was also considerable variation between agents.
+The additional training produced a small improvement but the agents continued to learn expensive schedules. There was also substantial variation between training seeds.
 
-As an example, after 20,000 episodes one agent learned to execute 9,500 of its 10,000 shares in a single interval. Its execution cost in the constant-price reference market was 24.1 basis points, compared with the known optimum of 7.8 basis points.
+One agent trained for 20,000 episodes learned to sell 9,500 of its 10,000 shares during a single interval. On a constant-price reference path, this schedule cost 24.1 bps, compared with the known full-sized optimum of 7.8 bps.
 
-I had expected the longer training run to produce a more noticeable improvement but instead it suggested that increasing the number of episodes alone was unlikely to solve the problem.
+Increasing the training budget alone had not resolved the problem, so I investigated whether random price movements were contributing to the difficulty.
 
 ### Training Without Price Volatility
 
-I wanted to check whether the changing market prices were making Q-learning harder to train.
+I repeated the 20,000-episode experiment with training volatility set to zero. Every training episode used a constant market price of $100.
 
-To investigate this I repeated the 20,000-episode experiment with training volatility set to zero. Every training episode now used a constant market price of $100.
+I kept the original stochastic validation paths which used a volatility setting of 0.002. This allowed me to compare policies learned under simpler conditions against the same evaluation scenarios.
 
-I kept the original stochastic validation paths which had a volatility setting of 0.002 per time step which allowed me to examine the learned schedules in a simpler training environment while continuing to compare their performance under changing prices.
+Removing volatility improved performance, but none of the five agents reached the known optimal cost on the flat-market reference path.
 
-Removing price volatility improved the results although none of the five agents reached the optimal flat-market execution cost.
+| Agent Seed | Flat-Market Cost | Difference from Optimum |
+| ---------- | ---------------: | ----------------------: |
+| 42         |          9.3 bps |                +1.5 bps |
+| 43         |         11.9 bps |                +4.1 bps |
+| 44         |         12.7 bps |                +4.9 bps |
+| 45         |         13.7 bps |                +5.9 bps |
+| 46         |         15.8 bps |                +8.0 bps |
 
-| Agent Seed | Flat-Market Cost | Difference from 7.8 bps Optimum |
-|------------|------------------|---------------------------------|
-| 42         | 9.3 bps          | +1.5 bps                        |
-| 43         | 11.9 bps         | +4.1 bps                        |
-| 44         | 12.7 bps         | +4.9 bps                        |
-| 45         | 13.7 bps         | +5.9 bps                        |
-| 46         | 15.8 bps         | +8.0 bps                        |
+Seed 42 produced the best schedule but it still included some relatively large trades.
 
-As can be seen in the results table, seed 42 produced the best result, but even this policy still concentrated some trades into relatively large quantities.
+The improvement suggested that price variation was contributing to the learning difficulty. The remaining gap from the known optimum led me to investigate how frequently different actions were being updated.
 
-I found this experiment to be useful because it showed that unpredictable price movements were contributing to the learning difficulty. At the same time, the agent continued to struggle when those movements were removed.
+## Investigating the Q-Table
 
-I decided to look more closely at the Q-table before making further changes to the training algorithm.
+I added counters to record how often each state-action pair received a Q-learning update.
 
-### Investigating the Q-Values
+Before adding these diagnostics, I had primarily been checking the number of states visited during training. Most runs had visited approximately 220 or 221 states which initially suggested that the agent was exploring much of the available state space.
 
-I added diagnostic counters to record how often each state-action pair was updated during training.
+In the 20,000-episode deterministic experiment, all 2,341 recorded state-action pairs had received at least one update but It was apparent that the number of updates varied considerably between actions.
 
-Prior to this I was checking how many states appeared in the Q-table. Most training runs had visited around 220 or 221 states which initially made it seem like the agent had explored nearly everything.
+At the initial state, selling zero lots received roughly 9,000 updates whereas selling two lots received only around 600.
 
-The new diagnostics showed that all 2,341 recorded state-action pairs had received at least one update in the deterministic training experiment but some actions were still being updated much more frequently than others.
+I also found that the estimated Q-values for waiting were much higher than their actual optimal values.
 
-At the initial state the action corresponding to selling zero lots received roughly 9,000 updates in a 20,000-episode run. Selling two lots received only around 600 updates.
+For seed 42, the estimated Q-value for selling zero lots at the initial decision was approximately **−1.60**. The best possible total reward after taking that action in the constant-price environment was −7.9.
 
-I also noticed that the estimated Q-values for waiting were much higher than their actual optimal values.
+The Q-value for immediately selling the entire order was correctly estimated at −26.0.
 
-For example, in seed 42, the estimated Q-value for selling zero lots at the initial step was approximately -1.60. In the constant-price environment, the best possible total reward after choosing that action is -7.9.
+The difference made sense when I considered how the rewards were received. Immediate execution ends the episode and gives the agent the complete cost of its decision. Waiting produces an immediate reward of zero while the cost of completing the order occurs during later decisions. The agent needs repeated updates to learn how those future costs affect the value of waiting. In these experiments the estimates were not consistently capturing those costs.
 
-The Q-value for selling the entire order immediately was correctly estimated at -26.0. That action is easier to learn because the episode ends immediately and the agent receives the full execution cost.
+I also noticed a potential issue with action selection. Because the Q-values initially started at zero, several actions could have identical estimated values. The original greedy action-selection method always chose the smallest action when values were tied. In this environment, that often meant selling nothing.
 
-Waiting is more complicated. Its immediate reward is zero, and the cost of completing the order comes later. The agent needs to learn those future costs through repeated Q-value updates.
+I decided to test whether removing that preference would improve learning.
 
-The results suggested that the estimated future costs were not being propagated accurately enough through the longer execution horizon.
+## Randomized Tie-Breaking
 
-Another possible contributor was the way the agent handled actions with equal Q-values. Initially, every Q-value was zero, and the greedy action-selection method always selected the smallest action when values were tied. In our environment, the smallest action is often to sell nothing.
+I modified the Q-learning agent to support randomized greedy tie-breaking. When multiple actions have the same highest Q-value the agent can randomly choose among them. I kept the original behaviour available so I could compare both approaches under the same training settings.
 
-I wanted to see whether removing that preference would improve learning.
-
-### Randomized Tie-Breaking
-
-I modified the Q-learning agent to support randomized greedy tie-breaking.
-
-Previously, when several actions had the same highest Q-value, the agent always selected the smallest action. With the new option enabled, it randomly selects one of the equally valued actions.
-
-I kept the original behavior available so that the two approaches could be compared using the same training configuration.
-
-Both experiments used 20,000 episodes per agent with zero training volatility. Evaluation was performed on the same stochastic validation paths.
+For this experiment, I trained five agents for 20,000 episodes each with zero price volatility. The policies were evaluated on the same 500 stochastic validation paths.
 
 | Agent Seed  | Original Difference from TWAP | Randomized Tie-Breaking |
-|-------------|-------------------------------|-------------------------| 
-| 42          | +1.9412 bps                   | +4.5645 bps             |
-| 43          | +4.2885 bps                   | +1.2646 bps             |
-| 44          | +5.0068 bps                   | +1.7981 bps             |
-| 45          | +6.2274 bps                   | +2.7027 bps             |
-| 46          | +7.9187 bps                   | +1.9077 bps             |
-| **Average** | **+5.0765 bps**               | **+2.4475 bps**         |
+| ----------- | ----------------------------: | ----------------------: |
+| 42          |                   +1.9412 bps |             +4.5645 bps |
+| 43          |                   +4.2885 bps |             +1.2646 bps |
+| 44          |                   +5.0068 bps |             +1.7981 bps |
+| 45          |                   +6.2274 bps |             +2.7027 bps |
+| 46          |                   +7.9187 bps |             +1.9077 bps |
+| **Average** |               **+5.0765 bps** |         **+2.4475 bps** |
 
-Randomized tie-breaking improved the average difference from TWAP by approximately 2.63 basis points.
+Randomized tie-breaking reduced the average disadvantage relative to TWAP by approximately **2.63 bps**.
 
-The improvement was apparent in the learned schedules as well. Several agents began spreading their trades across more intervals instead of leaving most of the inventory until near the deadline, however this improvement was not consistent for every seed. Seed 42 actually performed worse with randomized tie-breaking, although the other four agents improved.
+Four of the five agents improved. Their learned schedules generally distributed trades across more intervals, reducing the large executions that had appeared in earlier experiments.
 
-This was an interesting result because the underlying Q-learning update equation had not changed. The improvement came from changing how the agent selected between actions with identical estimated values.
+Seed 42 performed worse with randomized tie-breaking, so the improvement was not consistent across every run.
 
-It also showed how much the learning process could depend on relatively small implementation choices.
+I found this result interesting because the Q-learning update equation remained unchanged. The difference came from how the agent selected between actions with identical estimated values.
 
+## Findings
+
+Tabular Q-learning successfully learned the known optimal schedule in the small deterministic benchmark. Its performance was much less reliable on the full-sized execution problem.
+
+The Q-table diagnostics helped explain some of the difficulty. Many state-action pairs were updated infrequently and the agent often overestimated the value of waiting. The longer execution window made it difficult to account for costs that occurred several decisions after an action was taken.
+
+Randomized tie-breaking improved the average result but the five trained agents still performed worse than TWAP.
+
+These experiments motivated my move to Deep Q-Networks. I wanted to investigate whether a neural network could learn more useful estimates of future execution costs and produce more consistent schedules on the full-sized problem.
+
+The subsequent DQN development and evaluation are documented separately in [DQN Experimental Results](dqn_results.md).
 
 ## Reproducing the Experiments
 
-I created Python scripts for running the Q-learning experiments so that I could repeat tests without having to modify the source code each time. All experiments were run using the ExecAI simulator and its existing transaction-cost model. The scripts use fixed random seeds to make the results reproducible.
+The Q-learning scripts are available under `scripts/training/` and `scripts/evaluation/`.
 
-### Development Environment
+I developed the experiments using Python 3.14.3 on macOS.
 
-The project was developed using Python 3.14.3 on macOS with a virtual environment for managing Python packages.
-
-To set up the project from the repository root, run the following:
+From the repository root, create and activate a virtual environment, then install the project:
 
 ```bash
 python3 -m venv .venv
@@ -251,52 +201,57 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-The unit tests can be run using:
+To run the automated tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-These tests cover the simulator and execution-cost calculations as well as the Q-learning implementation.
+### Small Deterministic Benchmark
 
-### Small Benchmark
-
-The original deterministic experiment can be reproduced using:
+Run the original 400-share experiment:
 
 ```bash
-python scripts/compare_q_learning.py
+python -m scripts.training.compare_q_learning
 ```
 
-This trains a Q-learning agent for 5,000 episodes in the small constant-price environment. The script prints the learned execution schedule and compares its cost against Immediate Execution and TWAP. The expected optimal execution cost is 13.5 basis points.
+This trains Q-learning for 5,000 episodes and compares its learned execution schedule against TWAP and Immediate Execution. The known optimal cost is 13.5 bps.
 
 ### Full-Size Experiments
 
-The full-sized experiments use 10,000 shares divided into twenty inventory lots with twelve decision intervals.
-
-To run the original experiment with 5,000 training episodes:
+Run the original stochastic experiment with 5,000 training episodes:
 
 ```bash
-python scripts/evaluate_q_learning.py --full-size --training-episodes 5000
+python -m scripts.evaluation.evaluate_q_learning \
+  --full-size \
+  --training-episodes 5000
 ```
 
-To repeat it with 20,000 training episodes:
+Increase the training budget to 20,000 episodes:
 
 ```bash
-python scripts/evaluate_q_learning.py --full-size --training-episodes 20000
+python -m scripts.evaluation.evaluate_q_learning \
+  --full-size \
+  --training-episodes 20000
 ```
 
-For the experiment with zero training volatility:
+Repeat the experiment with constant prices during training:
 
 ```bash
-python scripts/evaluate_q_learning.py --full-size --training-episodes 20000 --training-volatility 0
+python -m scripts.evaluation.evaluate_q_learning \
+  --full-size \
+  --training-episodes 20000 \
+  --training-volatility 0
 ```
 
-To enable randomized greedy tie-breaking:
+Enable randomized greedy tie-breaking:
 
 ```bash
-python scripts/evaluate_q_learning.py --full-size --training-episodes 20000 --training-volatility 0 --random-tie-breaking
+python -m scripts.evaluation.evaluate_q_learning \
+  --full-size \
+  --training-episodes 20000 \
+  --training-volatility 0 \
+  --random-tie-breaking
 ```
 
-The evaluation script trains five agents using different seeds. It reports each agent's learned execution schedule and its performance against the existing baselines.
-
-All agents are evaluated on the same 500 stochastic validation paths, allowing their execution costs to be compared using the same market scenarios.
+The evaluation script trains five agents using seeds 42 through 46. It reports each agent's learned schedule, its cost on a constant-price reference path, as well as its average difference from TWAP across 500 shared stochastic validation episodes.
