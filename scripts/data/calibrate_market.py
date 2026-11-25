@@ -10,7 +10,7 @@ from execai.data.calibration import (
 from execai.data.dataset import load_dataset_split
 from execai.data.splits import DEFAULT_SPLITS
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 CHECKPOINT_DIRECTORY = PROJECT_ROOT / "data" / "raw" / "SPY_5min_SIP"
 OUTPUT_PATH = PROJECT_ROOT / "configs" / "spy_training_calibration.json"

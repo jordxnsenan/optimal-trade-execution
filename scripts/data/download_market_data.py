@@ -13,7 +13,7 @@ from execai.data.storage import (
 )
 
 CHECKPOINT_DIRECTORY = (
-    Path(__file__).resolve().parents[1] / "data" / "raw" / "SPY_5min_SIP"
+    Path(__file__).resolve().parents[2] / "data" / "raw" / "SPY_5min_SIP"
 )
 
 

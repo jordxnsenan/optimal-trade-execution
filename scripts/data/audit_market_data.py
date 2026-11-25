@@ -5,7 +5,7 @@ from pathlib import Path
 from execai.data.coverage import audit_market_data
 
 CHECKPOINT_DIRECTORY = (
-    Path(__file__).resolve().parents[1] / "data" / "raw" / "SPY_5min_SIP"
+    Path(__file__).resolve().parents[2] / "data" / "raw" / "SPY_5min_SIP"
 )
 
 
