@@ -24,3 +24,8 @@ __pycache__/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# generated experiment data and model checkpoints
+/results/**/*.csv
+/results/**/*.pt
+/results/**/*.txt

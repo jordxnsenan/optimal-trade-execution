@@ -2,28 +2,12 @@
 
 ## Data Source
 
-ExecAI uses SPY market data attained from Alpaca's Historical Market Data API. I selected Alpaca because it provides five-minute price and volume data through its SIP feed which is suitable for the planned execution simulations.
-
-The intended use of the data is to study historical price movements and estimate market characteristics. It will also be used to evaluate execution strategies on market paths that were not used during training.
-
-## Data Access Verification
-
-I tested the Alpaca API using the following three historical trading sessions:
-
-| Date              | Bars Returned | Result     |
-|-------------------|---------------|------------|
-| February 15, 2023 | 78            | Successful |
-| July 17, 2024     | 78            | Successful |
-| October 15, 2025  | 78            | Successful |
-
-Each request returned the expected 78 five-minute bars for a regular US trading session. The timestamps also matched the expected market opening times. These checks verify that historical SPY data is accessible across the years I plan to use.
-
-## Data Format
+I collected historical SPY market data from Alpaca's Historical Market Data API. I chose Alpaca because its SIP feed provides five-minute price and volume data covering the period needed for my execution experiments.
 
 The requests use the following settings:
 
 | Parameter        | Value                         |
-|------------------|-------------------------------|
+| ---------------- | ----------------------------- |
 | Symbol           | SPY                           |
 | Timeframe        | 5 minutes                     |
 | Feed             | SIP                           |
@@ -31,51 +15,83 @@ The requests use the following settings:
 | Market session   | 9:30 a.m. – 4:00 p.m. Eastern |
 | Timestamp format | UTC                           |
 
-The main fields are:
-- The timestamp
-- Open price
-- High price
-- Low price
-- Close price
-- Trading volume
+Each observation contains a timestamp and the opening, highest, lowest and closing prices for that interval, aswell as trading volume.
 
+I used the price data to study how execution strategies perform when market prices change. The volume data was useful for estimating when trading activity is typically higher or lower throughout the day.
 
-## Historical Dataset Coverage
+## Data Collection and Validation
 
-The historical SPY dataset was collected using Alpaca's SIP market data feed. It contains five-minute OHLCV observations from January 2023 through September 2026.
+Before downloading the full dataset, I tested the API using trading sessions from different years to confirm that I could retrieve the expected data.
 
-The data is divided chronologically into the following separate periods:
+| Trading Date      | Five-Minute Bars Returned |
+| ----------------- | ------------------------: |
+| February 15, 2023 |                        78 |
+| July 17, 2024     |                        78 |
+| October 15, 2025  |                        78 |
 
-| Partition  | Period                 | Trading Sessions | Five-Minute Bars |
-|------------|------------------------|------------------|------------------|
-| Training   | 2023–2024              | 502              | 38,976           |
-| Validation | 2025 | 250             | 19,392           |
-| Final Test | January–September 2026 | 187              | 14,586           |
-| Total      |                        | 939              | 72,954           |
+Each request returned the expected 78 bars for a regular trading session. I also checked that the timestamps aligned with the US market's trading hours.
 
-All three periods achieved 100% coverage against the expected NYSE trading calendar, with the validation process also accounting for scheduled early market closures.
+I then collected data from January 2023 through September 2026. The completed dataset contains **939 trading sessions and 72,954 five-minute bars**.
 
-Each trading session is stored as an individual CSV checkpoint. The ingestion pipeline verifies existing checkpoints before making additional API requests to allow interrupted downloads to resume. The raw market data is stored locally under `data/raw/SPY_5min_SIP/`
-and is excluded from Git.
+| Dataset    | Period                 | Trading Sessions | Five-Minute Bars |
+| ---------- | ---------------------- | ---------------: | ---------------: |
+| Training   | 2023–2024              |              502 |           38,976 |
+| Validation | 2025                   |              250 |           19,392 |
+| Final Test | January–September 2026 |              187 |           14,586 |
+| **Total**  |                        |          **939** |       **72,954** |
 
-### Data Separation
+I checked the completed dataset against the NYSE trading calendar. This included accounting for shortened trading sessions which contain fewer observations than a regular trading day. The final audit reported 100% coverage with no missing expected sessions or bars.
 
-The 2023–2024 training period will be used to estimate market characteristics and train the reinforcement learning agents. The 2025 validation period will support model development and hyperparameter selection. The January–September 2026 period is reserved for final testing. Model performance on this period will not be examined until the
-experimental configuration has been finalized. Historical prices and volumes will be used to inform market simulation and replay. Transaction costs and the effect of our hypothetical trades will continue to be modeled separately.
+I also implemented checkpointing during data collection. Each completed trading session is saved as a separate CSV file and the downloader checks existing files before requesting additional data. This allowed me to resume interrupted downloads without collecting the same sessions again. The raw data is stored locally under `data/raw/SPY_5min_SIP/` and is excluded from Git.
 
 ## Historical Market Calibration
 
-The initial market calibration uses the 2023–2024 training dataset where all parameters were calculated before examining the validation or held-out test periods. The estimated standard deviation of five-minute intraday log
-returns was 0.000721.
+I used the 2023–2024 training data to estimate the market conditions needed for the trading simulator.
 
-I also calculated an average intraday volume profile using 497 regular trading sessions. Five shortened sessions were excluded because their shorter trading windows would distort the normal full-day volume distribution.
+The estimated standard deviation of five-minute intraday log returns was approximately **0.000721**. I used this value to set the volatility of the synthetic price paths generated during reinforcement learning training.
 
-The resulting profile contains 78 volume fractions that sum to one. The first five-minute interval accounts for approximately 3.03% of average daily volume, while the final interval accounts for approximately 8.91%. The calibration parameters are saved in `configs/spy_training_calibration.json`.
+I also calculated an average intraday trading-volume profile. This calculation used 497 regular trading sessions. I excluded five shortened sessions because their different trading hours would affect the full-day volume distribution.
 
-These estimates will be used to configure synthetic market experiments and provide historical volume forecasts for execution strategies. They describe market behaviour observed during the training period and do not directly measure the market impact of hypothetical trades.
+The resulting profile contains 78 volume fractions, one for each five-minute interval in a regular session. The first interval accounted for approximately 3.03% of average daily volume and the final interval accounted for approximately 8.91%. These estimates were saved in `configs/spy_training_calibration.json`.
 
-The calibration can be reproduced using:
+The volume profile was later used to construct VWAP schedules and estimate relative liquidity during the execution window. All calibration parameters were calculated from the training period before examining the final test data.
+
+## Data Separation and Evaluation
+
+I divided the historical data chronologically to keep model development separate from final testing. The 2023–2024 data was used for market calibration and synthetic training scenarios. I used the 2025 sessions to evaluate execution strategies during development and investigate problems with the trained agents.
+
+I reserved the January–September 2026 sessions for the final evaluation. Once the DQN checkpoints and experimental settings were finalized, I evaluated the saved models on all 187 sessions without retraining them.
+
+The historical experiments use observed SPY price movements while the hypothetical trades are executed through the simulator. Transaction costs and market impact are calculated using the project's assumed execution-cost models. The historical data does not directly measure how my simulated orders would have affected actual market prices.
+
+## Reproducing the Data Preparation
+
+The data collection scripts are located under `scripts/data/`. Downloading historical data requires Alpaca API credentials with access to the SIP feed.
+
+After installing the project dependencies, credentials can be added to a local `.env` file using `.env.example` as a reference.
+
+To download the historical dataset:
 
 ```bash
-python scripts/calibrate_market.py
+python -m scripts.data.download_market_data \
+  --start 2023-01-01 \
+  --end 2026-09-30
 ```
+
+The downloader checks for previously completed sessions so the command can also be used to resume an interrupted collection.
+
+To audit the dataset against the expected trading calendar:
+
+```bash
+python -m scripts.data.audit_market_data \
+  --start 2023-01-01 \
+  --end 2026-09-30
+```
+
+Once the training data is available, the calibration can be regenerated using:
+
+```bash
+python -m scripts.data.calibrate_market
+```
+
+This recalculates the training-period market estimates and writes them to `configs/spy_training_calibration.json`. The repository already includes the calibration file used for the reported experiments.
